@@ -1,54 +1,60 @@
 #### Description
 
-The `kv` command reads a JSON array from standard input and prints one `key=value` (dotenv-style) line per record. For every record it resolves a `--key` template and a `--value` template and joins them with `=`, so a JSON array turns into a flat, greppable list of key/value pairs.
+The `kv` command reads a JSON array from standard input and prints one `key=value` (dotenv-style) line per resolved field per record, so a JSON array turns into a flat, greppable list of key/value pairs.
 
-Both `--key` and `--value` are resolved against the current record using the same single, consistent rule as `render list`'s template flags:
+Field selection uses the **same structure grammar** as `render table` / `render csv` / `aux4 2table`:
 
-- **No `$` in the value** — if the record has a field with that name, the field's value is used (2table-style), so `--key name` uses `record.name`. Dot notation is supported for nested fields (`--key meta.id`). If the record has **no** such field, the whole string is used as a literal constant on every row.
-- **One or more `$field` tokens** — each `$field` is replaced with that record field (empty string when the field is missing) and the rest of the string is kept literal, so `--value '$host:$port'` renders the two fields joined by a colon.
+- **Comma-separated fields** — `name,age,city` selects exactly those top-level fields.
+- **Nested groups** — `address[street,city]` flattens to **dotted keys**: `address.street=...` and `address.city=...`.
+- **Renaming** — `field:"Label"` (or `field:Label` without quotes) overrides the emitted key name. `address[street:"Street Address"]` emits `Street Address=Main St` — the label replaces the whole key rather than being appended to the dotted path.
+- **Bare object field** — selecting a field that holds a nested object without brackets (e.g. just `address`) emits the whole sub-object as a single JSON value (`address={"street":"Main St","city":"NYC"}`).
+- **Array-valued fields** — an array (e.g. `tags`) is emitted as a single `JSON.stringify`'d value (`tags=["a","b"]`), never expanded into indexed keys.
 
-The tokens are deliberately bare `$field`, **not** `${...}`. This keeps aux4's own execute-line `${...}` pre-substitution from ever touching these values. Single-quote the flag in your shell (`--value '$host:$port'`) so the shell itself does not expand `$field` before aux4 sees it.
+Column-width modifiers such as `{width:20}` are accepted but silently ignored, so a structure you also use with `table` or `csv` can be pasted unchanged.
 
-Both `--key` and `--value` are **required**. If either is omitted the command fails immediately with a clear error on stderr and exits `2` (it does not prompt, which would consume the piped stdin).
+If the structure argument is **omitted**, every field of each record is auto-flattened recursively into dotted keys — nested objects are walked to produce dotted paths, while arrays are emitted as a single JSON value.
 
 Input handling: a single JSON object is treated as a one-item array; an empty array (`[]`) prints nothing and exits `0`; invalid/non-JSON input prints a clear error to stderr and exits `1`.
 
 #### Usage
 
 ```bash
-cat data.json | aux4 render kv --key <template> --value <template>
+cat data.json | aux4 render kv [<structure>]
 ```
 
---key    Key template (required). Bare field name or `$field` interpolation.
---value  Value template (required). Bare field name or `$field` interpolation.
+structure  Optional. Comma-separated field structure (`field`, `field[sub1,sub2]`, `field:"Label"`). Omit to auto-flatten every field into dotted keys.
 
 #### Example
 
-Input (`settings.json`):
+Input (`person.json`):
 
 ```json
 [
-  { "name": "HOST", "val": "localhost" },
-  { "name": "PORT", "val": "3000" }
+  { "name": "Alice", "address": { "street": "Main St", "city": "NYC" }, "tags": ["a", "b"] }
 ]
 ```
 
+Explicit structure with a nested group and a rename:
+
 ```bash
-cat settings.json | aux4 render kv --key name --value val
+cat person.json | aux4 render kv 'name,address[street,city:"City"]'
 ```
 
 ```text
-HOST=localhost
-PORT=3000
+name=Alice
+address.street=Main St
+City=NYC
 ```
 
-Interpolated value:
+No structure — auto-flatten every field:
 
 ```bash
-cat servers.json | aux4 render kv --key name --value '$host:$port'
+cat person.json | aux4 render kv
 ```
 
 ```text
-web=localhost:3000
-db=db.example.com:5432
+name=Alice
+address.street=Main St
+address.city=NYC
+tags=["a","b"]
 ```

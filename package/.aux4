@@ -76,19 +76,15 @@
         {
           "name": "kv",
           "execute": [
-            "stdin:node ${packageDir}/lib/aux4-render.mjs kv values(key, value)"
+            "stdin:node ${packageDir}/lib/aux4-render.mjs kv values(structure)"
           ],
           "help": {
-            "text": "Render a JSON array from stdin as key=value (dotenv-style) lines, one per record.",
+            "text": "Render a JSON array from stdin as key=value (dotenv-style) lines, flattening each record's fields.",
             "variables": [
               {
-                "name": "key",
-                "text": "Key template (required). Bare field name or $field interpolation. Resolved per record.",
-                "default": ""
-              },
-              {
-                "name": "value",
-                "text": "Value template (required). Bare field name or $field interpolation. Resolved per record.",
+                "name": "structure",
+                "text": "Optional field structure (same grammar as render table/csv): comma-separated fields, field[sub1,sub2] nesting, field:\"Label\" rename. Omit to auto-flatten every field into dotted keys.",
+                "arg": true,
                 "default": ""
               }
             ]

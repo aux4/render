@@ -1,89 +1,121 @@
 # render kv
 
-## plain field mode
+## explicit structure — flat fields
 
-### should render key=value using bare field names
-
-```file:settings.json
-[
-  { "name": "HOST", "val": "localhost" },
-  { "name": "PORT", "val": "3000" }
-]
-```
-
-```execute
-cat settings.json | aux4 render kv --key name --value val
-```
-
-```expect
-HOST=localhost
-PORT=3000
-```
-
-## interpolation mode
-
-### should replace $field tokens in key and value
-
-```file:servers.json
-[
-  { "id": "web", "host": "localhost", "port": "3000" },
-  { "id": "db", "host": "db.example.com", "port": "5432" }
-]
-```
-
-```execute
-cat servers.json | aux4 render kv --key '$id' --value '$host:$port'
-```
-
-```expect
-web=localhost:3000
-db=db.example.com:5432
-```
-
-## missing key
-
-### should fail with a clear error and exit 2 when --key is omitted
-
-When no `--key` is given, the command must not prompt (which would eat the piped JSON) — it invokes the script, which fails immediately with an error on stderr and a non-zero exit.
+### should render key=value using the selected fields
 
 ```file:settings.json
 [
-  { "name": "HOST", "val": "localhost" }
+  { "name": "HOST", "val": "localhost", "extra": "ignored" },
+  { "name": "PORT", "val": "3000", "extra": "ignored" }
 ]
 ```
 
 ```execute
-cat settings.json | aux4 render kv --value val; echo "exit=$?"
+cat settings.json | aux4 render kv name,val
 ```
 
 ```expect
-exit=2
+name=HOST
+val=localhost
+name=PORT
+val=3000
 ```
 
-```error:partial
-No --key field provided. Use --key <field>.
-```
+## explicit structure — nested group
 
-## missing value
+### should flatten a nested group into dotted keys
 
-### should fail with a clear error and exit 2 when --value is omitted
-
-```file:settings.json
+```file:person.json
 [
-  { "name": "HOST", "val": "localhost" }
+  { "name": "Alice", "address": { "street": "Main St", "city": "NYC" } }
 ]
 ```
 
 ```execute
-cat settings.json | aux4 render kv --key name; echo "exit=$?"
+cat person.json | aux4 render kv 'name,address[street,city]'
 ```
 
 ```expect
-exit=2
+name=Alice
+address.street=Main St
+address.city=NYC
 ```
 
-```error:partial
-No --value field provided. Use --value <field>.
+## explicit structure — rename
+
+### should override the emitted key with the label
+
+```file:person.json
+[
+  { "name": "Alice", "address": { "street": "Main St", "city": "NYC" } }
+]
+```
+
+```execute
+cat person.json | aux4 render kv 'name,address[street:"Street Address",city:City]'
+```
+
+```expect
+name=Alice
+Street Address=Main St
+City=NYC
+```
+
+## no structure — auto flatten
+
+### should auto-flatten every field including nested objects into dotted keys
+
+```file:person.json
+[
+  { "name": "Alice", "address": { "street": "Main St", "city": "NYC" } }
+]
+```
+
+```execute
+cat person.json | aux4 render kv
+```
+
+```expect
+name=Alice
+address.street=Main St
+address.city=NYC
+```
+
+## array-valued field
+
+### should JSON.stringify an array as a single value, not expand it
+
+```file:tagged.json
+[
+  { "name": "Alice", "tags": ["a", "b"] }
+]
+```
+
+```execute
+cat tagged.json | aux4 render kv name,tags
+```
+
+```expect
+name=Alice
+tags=["a","b"]
+```
+
+### should JSON.stringify an array in auto-flatten mode too
+
+```file:tagged.json
+[
+  { "name": "Alice", "tags": ["a", "b"] }
+]
+```
+
+```execute
+cat tagged.json | aux4 render kv
+```
+
+```expect
+name=Alice
+tags=["a","b"]
 ```
 
 ## empty array
@@ -91,7 +123,7 @@ No --value field provided. Use --value <field>.
 ### should print nothing and exit 0 for an empty array
 
 ```execute
-echo '[]' | aux4 render kv --key name --value val; echo "exit=$?"
+echo '[]' | aux4 render kv name,val; echo "exit=$?"
 ```
 
 ```expect
@@ -103,11 +135,12 @@ exit=0
 ### should treat a single object as a one-item array
 
 ```execute
-echo '{"name":"HOST","val":"localhost"}' | aux4 render kv --key name --value val
+echo '{"name":"HOST","val":"localhost"}' | aux4 render kv name,val
 ```
 
 ```expect
-HOST=localhost
+name=HOST
+val=localhost
 ```
 
 ## invalid json
@@ -115,7 +148,7 @@ HOST=localhost
 ### should fail with a clear error and exit 1 on non-JSON stdin
 
 ```execute
-echo 'not json' | aux4 render kv --key name --value val; echo "exit=$?"
+echo 'not json' | aux4 render kv name,val; echo "exit=$?"
 ```
 
 ```expect

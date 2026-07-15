@@ -7,10 +7,9 @@
 //   list  <primary> <secondary> <icon> <badge>
 //   table <table> <lineNumbers> <showInvalidLines>
 //   csv   <table> <lineNumbers> <showInvalidLines>
-//   kv    <key> <value>
+//   kv    [<structure>]
 //
-// Field interpolation rule (shared by --icon/--primary/--secondary/--badge and
-// by --key/--value):
+// Field interpolation rule (shared by --icon/--primary/--secondary/--badge):
 //   - No "$" in the value  -> if the record HAS that field (dot-notation aware),
 //                             substitute the field's value (2table-style),
 //                             e.g. --secondary date -> record.date. Otherwise the
@@ -214,26 +213,150 @@ function delegateToTable(args, format) {
   process.exit(result.status === null ? 1 : result.status);
 }
 
+// --- kv structure parser -------------------------------------------------
+//
+// `render kv` accepts an optional structure argument using the SAME grammar as
+// `render table`/`render csv`/`aux4 2table`: comma-separated fields, `field[a,b]`
+// nesting, and `field:"Label"` (or `field:Label`) renaming. This is a small,
+// self-contained parser that mirrors aux4/2table's lib/Structure.js grammar so
+// the two stay in sync — kv's output shape (flat key=value lines) is not one of
+// 2table's renderers, so we implement the grammar here rather than shelling out.
+// Column-width modifiers like `{width:N}` are accepted but silently ignored,
+// since a user may paste a structure they also use with `table`/`csv`.
+
+// Split a structure string on top-level commas (commas inside [...] stay grouped).
+function splitKvItems(str) {
+  const items = [];
+  let current = "";
+  let depth = 0;
+  for (let i = 0; i < str.length; i++) {
+    const ch = str[i];
+    if (ch === "[") depth++;
+    else if (ch === "]") depth--;
+    if (ch === "," && depth === 0) {
+      if (current.trim()) items.push(parseKvItem(current.trim()));
+      current = "";
+    } else {
+      current += ch;
+    }
+  }
+  if (current.trim()) items.push(parseKvItem(current.trim()));
+  return items;
+}
+
+// Parse a single structure item into { field, label, group }. `label` is null
+// unless the item was renamed with `field:Label`; surrounding double quotes are
+// stripped from the label (matching 2table's own header rendering).
+function parseKvItem(item) {
+  const fieldMatch = item.match(/^([^:[\]{]+)/);
+  if (!fieldMatch) {
+    throw new Error(`invalid structure item: ${item}`);
+  }
+  const field = fieldMatch[1].trim();
+
+  const labelMatch = item.match(/^[^:[\]{]+:([^[\]{]+)/);
+  let label = null;
+  let consumed = fieldMatch[1];
+  if (labelMatch) {
+    consumed = `${fieldMatch[1]}:${labelMatch[1]}`;
+    label = labelMatch[1].trim();
+    if (label.startsWith('"') && label.endsWith('"')) {
+      label = label.slice(1, -1);
+    }
+  }
+
+  let remaining = item.substring(consumed.length);
+  let group = null;
+  if (remaining.startsWith("[")) {
+    let count = 0;
+    let end = -1;
+    for (let i = 0; i < remaining.length; i++) {
+      if (remaining[i] === "[") count++;
+      else if (remaining[i] === "]") {
+        count--;
+        if (count === 0) {
+          end = i;
+          break;
+        }
+      }
+    }
+    if (end !== -1) {
+      group = splitKvItems(remaining.substring(1, end));
+    }
+  }
+  // Any trailing `{...}` (e.g. {width:20}) is intentionally ignored.
+
+  return { field, label, group };
+}
+
+// Flatten a parsed structure into an ordered list of { key, path } leaves.
+// The data path is always the dotted chain of field names (address.street). The
+// emitted key is that dotted path UNLESS the leaf was explicitly renamed, in
+// which case the label replaces the whole key (address[street:"Street Addr"]
+// -> key "Street Addr", path "address.street").
+function collectKvLeaves(items, parentPath) {
+  const leaves = [];
+  for (const item of items) {
+    const path = parentPath ? `${parentPath}.${item.field}` : item.field;
+    if (item.group && item.group.length > 0) {
+      leaves.push(...collectKvLeaves(item.group, path));
+    } else {
+      leaves.push({ key: item.label != null ? item.label : path, path });
+    }
+  }
+  return leaves;
+}
+
+// Auto-flatten a record into ordered { key, value } pairs: walk every field,
+// recursing into plain nested objects to produce dotted keys. Arrays (and empty
+// objects) are emitted as a single JSON.stringify'd value, never expanded.
+function autoFlatten(record) {
+  const out = [];
+  const walk = (obj, prefix) => {
+    if (obj === null || typeof obj !== "object") return;
+    for (const key of Object.keys(obj)) {
+      const value = obj[key];
+      const path = prefix ? `${prefix}.${key}` : key;
+      if (value !== null && typeof value === "object" && !Array.isArray(value) && Object.keys(value).length > 0) {
+        walk(value, path);
+      } else {
+        out.push({ key: path, value: stringify(value) });
+      }
+    }
+  };
+  walk(record, "");
+  return out;
+}
+
 function renderKv(args) {
-  const keyTpl = args[0] || "";
-  const valueTpl = args[1] || "";
+  const structure = (args[0] || "").trim();
 
   const raw = readAllStdin();
-
-  // Both --key and --value are required. They deliberately have a "" default in
-  // package/.aux4 (so aux4 never prompts and eats the piped stdin); the check
-  // lives here in the script, mirroring the --primary validation in list.
-  if (!keyTpl) {
-    fail("No --key field provided. Use --key <field>.", 2);
-  }
-  if (!valueTpl) {
-    fail("No --value field provided. Use --value <field>.", 2);
-  }
-
   const records = parseRecords(raw);
 
-  // One "<resolvedKey>=<resolvedValue>" line per record (dotenv-style key=value).
-  const lines = records.map(record => `${resolve(keyTpl, record)}=${resolve(valueTpl, record)}`);
+  // When a structure is given, resolve it once into an ordered list of leaves;
+  // otherwise each record is auto-flattened into all of its (dotted) fields.
+  let leaves = null;
+  if (structure !== "") {
+    try {
+      leaves = collectKvLeaves(splitKvItems(structure), "");
+    } catch (e) {
+      fail(`Invalid structure: ${e.message}`, 2);
+    }
+  }
+
+  const lines = [];
+  for (const record of records) {
+    if (leaves) {
+      for (const leaf of leaves) {
+        lines.push(`${leaf.key}=${stringify(getField(record, leaf.path))}`);
+      }
+    } else {
+      for (const pair of autoFlatten(record)) {
+        lines.push(`${pair.key}=${pair.value}`);
+      }
+    }
+  }
 
   if (lines.length > 0) {
     process.stdout.write(lines.join("\n") + "\n");

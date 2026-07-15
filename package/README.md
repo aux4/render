@@ -7,7 +7,7 @@ Render a JSON array from standard input as a human-readable view. Pipe the raw J
 - `aux4 render list` — an MUI-List-style view (icon, primary, secondary, and a right-aligned badge label).
 - `aux4 render table` — a table view that delegates to [`aux4/2table`](https://github.com/aux4/2table).
 - `aux4 render csv` — a CSV view that delegates to [`aux4/2table`](https://github.com/aux4/2table).
-- `aux4 render kv` — a flat `key=value` (dotenv-style) view, one line per record.
+- `aux4 render kv` — a flat `key=value` (dotenv-style) view that flattens each record's fields, using the same structure grammar as `render table`/`csv`.
 
 ## Installation
 
@@ -54,7 +54,7 @@ cat people.json | aux4 render table firstName,lastName,role
 
 ## Field interpolation
 
-Every template flag (`--icon`, `--primary`, `--secondary`, `--badge`, `--key`, `--value`) is resolved against the current record using one consistent rule:
+Every `render list` template flag (`--icon`, `--primary`, `--secondary`, `--badge`) is resolved against the current record using one consistent rule:
 
 - **No `$` in the value** — if the record has a field with that name, the field's value is used (2table-style). `--secondary date` renders `record.date`. Dot notation works for nested fields: `--secondary address.city`. If the record has **no** such field, the whole string is used as a literal constant on every row, so `--icon 😀` prints `😀` on each row and `--badge done` prints `done` on each row.
 - **One or more `$field` tokens** — each `$field` is replaced with that record field (empty string when missing) and the rest of the string is kept literal. `--primary '$firstName $lastName'` renders the two fields joined by a space.
@@ -122,42 +122,51 @@ cat people.json | aux4 render list --icon 😀 --primary '$firstName $lastName'
 
 ### aux4 render kv
 
-Reads a JSON array from stdin and prints one `key=value` (dotenv-style) line per record. Both templates are resolved per record using the same rule as the `list` flags.
+Reads a JSON array from stdin and prints one `key=value` (dotenv-style) line per resolved field per record — a flat, greppable view of every record's fields.
 
-Options:
+It uses the **same structure grammar** as `render table` / `render csv` / `aux4 2table`:
 
-- `--key <template>` — Key template (required). Bare field name or `$field` interpolation.
-- `--value <template>` — Value template (required). Bare field name or `$field` interpolation.
+- `structure` (positional, optional) — comma-separated fields with the usual grammar:
+  - `name,age,city` — select those top-level fields.
+  - `address[street,city]` — nested groups flatten to **dotted keys** (`address.street=...`, `address.city=...`).
+  - `field:"Label"` (or `field:Label`) — rename the emitted key. `address[street:"Street Address"]` emits `Street Address=Main St`; the label replaces the whole key.
+  - A bare object field with no brackets (`address`) emits the sub-object as a single JSON value.
+  - Array-valued fields are emitted as a single `JSON.stringify`'d value (`tags=["a","b"]`), never expanded into indexed keys.
+  - Column-width modifiers like `{width:20}` are accepted but silently ignored, so a structure you also use with `table`/`csv` can be pasted unchanged.
 
-Both `--key` and `--value` are required; if either is omitted the command prints a clear error to stderr and exits `2`.
+Omit the structure to auto-flatten **every** field recursively into dotted keys.
 
-Input (`settings.json`):
+Input (`person.json`):
 
 ```json
 [
-  { "name": "HOST", "val": "localhost" },
-  { "name": "PORT", "val": "3000" }
+  { "name": "Alice", "address": { "street": "Main St", "city": "NYC" }, "tags": ["a", "b"] }
 ]
 ```
 
+Explicit structure with a nested group and a rename:
+
 ```bash
-cat settings.json | aux4 render kv --key name --value val
+cat person.json | aux4 render kv 'name,address[street,city:"City"]'
 ```
 
 ```text
-HOST=localhost
-PORT=3000
+name=Alice
+address.street=Main St
+City=NYC
 ```
 
-Interpolated value:
+No structure — auto-flatten every field:
 
 ```bash
-cat servers.json | aux4 render kv --key name --value '$host:$port'
+cat person.json | aux4 render kv
 ```
 
 ```text
-web=localhost:3000
-db=db.example.com:5432
+name=Alice
+address.street=Main St
+address.city=NYC
+tags=["a","b"]
 ```
 
 ### aux4 render table
