@@ -92,19 +92,3 @@ cat people.json | aux4 render list --primary name --actions status
 ```expect:regex
 ^Alice {69}active$
 ```
-
-## format json passthrough
-
-### should pass the original stdin JSON through untouched
-
-```file:compact.json
-[{"name":"Alice"},{"name":"Bob"}]
-```
-
-```execute
-cat compact.json | aux4 render list --primary name --format json
-```
-
-```expect
-[{"name":"Alice"},{"name":"Bob"}]
-```

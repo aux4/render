@@ -43,7 +43,7 @@
         {
           "name": "list",
           "execute": [
-            "stdin:node ${packageDir}/lib/aux4-render.mjs list values(primary, secondary, icon, actions, format)"
+            "stdin:node ${packageDir}/lib/aux4-render.mjs list values(primary, secondary, icon, actions)"
           ],
           "help": {
             "text": "Render a JSON array from stdin as a MUI-List-style view (icon, primary, secondary, actions).",
@@ -67,15 +67,6 @@
                 "name": "actions",
                 "text": "Actions template, rendered right-aligned on the primary line (plain text, not interactive).",
                 "default": ""
-              },
-              {
-                "name": "format",
-                "text": "Output format. 'list' renders the view; 'json' passes the original stdin JSON through untouched.",
-                "default": "list",
-                "options": [
-                  "list",
-                  "json"
-                ]
               }
             ]
           }
@@ -83,7 +74,7 @@
         {
           "name": "table",
           "execute": [
-            "stdin:node ${packageDir}/lib/aux4-render.mjs table values(table, format, lineNumbers, showInvalidLines)"
+            "stdin:node ${packageDir}/lib/aux4-render.mjs table values(table, lineNumbers, showInvalidLines)"
           ],
           "help": {
             "text": "Render a JSON array from stdin as a table, delegating to aux4 2table.",
@@ -93,16 +84,6 @@
                 "text": "The table structure to output (column list), forwarded to aux4 2table.",
                 "default": "",
                 "arg": true
-              },
-              {
-                "name": "format",
-                "text": "Output format. 'ascii'/'md' forward to aux4 2table; 'json' passes the original stdin JSON through untouched.",
-                "default": "ascii",
-                "options": [
-                  "ascii",
-                  "md",
-                  "json"
-                ]
               },
               {
                 "name": "lineNumbers",

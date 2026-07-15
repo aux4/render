@@ -4,8 +4,8 @@
 //
 // This is a zero-dependency ESM script (Node builtins only), so it is authored
 // directly here rather than bundled. Two actions:
-//   list  <primary> <secondary> <icon> <actions> <format>
-//   table <table> <format> <lineNumbers> <showInvalidLines>
+//   list  <primary> <secondary> <icon> <actions>
+//   table <table> <lineNumbers> <showInvalidLines>
 //
 // Field interpolation rule (shared by --icon/--primary/--secondary/--actions):
 //   - No "$" in the value  -> the whole string is a bare field name (2table-style),
@@ -73,16 +73,8 @@ function renderList(args) {
   const secondaryTpl = args[1] || "";
   const iconTpl = args[2] || "";
   const actionsTpl = args[3] || "";
-  const format = args[4] || "list";
 
   const raw = readAllStdin();
-
-  // json passthrough: emit the original stdin untouched (no trailing newline added
-  // beyond what was there) so pipelines can request raw JSON uniformly.
-  if (format === "json") {
-    process.stdout.write(raw);
-    return;
-  }
 
   if (!primaryTpl) {
     fail("No --primary template provided. Use --primary <field-or-template>.", 2);
@@ -120,22 +112,14 @@ function renderList(args) {
 
 function renderTable(args) {
   const table = args[0] || "";
-  const format = args[1] || "ascii";
-  const lineNumbers = args[2] || "false";
-  const showInvalidLines = args[3] || "false";
+  const lineNumbers = args[1] || "false";
+  const showInvalidLines = args[2] || "false";
 
   const raw = readAllStdin();
 
-  if (format === "json") {
-    process.stdout.write(raw);
-    return;
-  }
-
-  if (format !== "ascii" && format !== "md") {
-    fail(`Invalid --format '${format}'. Use ascii, md, or json.`, 2);
-  }
-
-  const forwarded = ["2table", "--format", format, "--lineNumbers", lineNumbers, "--showInvalidLines", showInvalidLines];
+  // Always render ascii — delegate to aux4 2table with no --format flag so 2table's
+  // own ascii default applies.
+  const forwarded = ["2table", "--lineNumbers", lineNumbers, "--showInvalidLines", showInvalidLines];
   if (table) forwarded.push(table);
 
   const result = spawnSync("aux4", forwarded, { input: raw, encoding: "utf8" });

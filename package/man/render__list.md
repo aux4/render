@@ -1,6 +1,6 @@
 #### Description
 
-The `list` command reads a JSON array from standard input and prints a human-readable, MUI-List-style view — one block per record. Each block can show an icon, a primary line, a secondary line, and a right-aligned actions label. It is meant for piping the raw JSON output of any aux4 command through a nicer terminal view, while still allowing a raw JSON passthrough for scripting.
+The `list` command reads a JSON array from standard input and prints a human-readable, MUI-List-style view — one block per record. Each block can show an icon, a primary line, a secondary line, and a right-aligned actions label. It is meant for piping the raw JSON output of any aux4 command through a nicer terminal view.
 
 Each of `--icon`, `--primary`, `--secondary`, and `--actions` is a template resolved against the current record using a single, consistent rule:
 
@@ -18,19 +18,16 @@ Layout:
 - The **secondary** line is printed beneath, indented to align under the primary text.
 - Records are separated by a blank line.
 
-With `--format json`, the original standard input is written through untouched (no reformatting), so a pipeline can uniformly request either the rendered view or raw JSON.
-
 #### Usage
 
 ```bash
-cat data.json | aux4 render list --primary <template> [--secondary <template>] [--icon <template>] [--actions <template>] [--format <list|json>]
+cat data.json | aux4 render list --primary <template> [--secondary <template>] [--icon <template>] [--actions <template>]
 ```
 
 --primary    Primary line template (required). Bare field name or `$field` interpolation.
 --secondary  Secondary line template. Bare field name or `$field` interpolation.
 --icon       Icon template rendered before the primary line.
 --actions    Actions label, right-aligned on the primary line (plain text, not interactive).
---format     `list` (default) renders the view; `json` passes the original stdin JSON through untouched.
 
 #### Example
 
@@ -53,14 +50,4 @@ Engineer
 
 Linus Torvalds                                                              away
 Maintainer
-```
-
-Raw JSON passthrough for scripting:
-
-```bash
-cat people.json | aux4 render list --primary '$firstName $lastName' --format json
-```
-
-```text
-[{"firstName":"Ada","lastName":"Lovelace","role":"Engineer","status":"active"},{"firstName":"Linus","lastName":"Torvalds","role":"Maintainer","status":"away"}]
 ```

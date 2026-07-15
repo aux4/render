@@ -1,6 +1,6 @@
 # aux4/render
 
-Render a JSON array from standard input as a human-readable view. Pipe the raw JSON output of any aux4 command through `aux4 render` to get a tidy list or table in the terminal — while still allowing a raw JSON passthrough for scripting.
+Render a JSON array from standard input as a human-readable view. Pipe the raw JSON output of any aux4 command through `aux4 render` to get a tidy list or table in the terminal.
 
 `aux4/render` provides two commands:
 
@@ -73,7 +73,6 @@ Options:
 - `--secondary <template>` — Secondary line, printed beneath the primary and indented to align under it.
 - `--icon <template>` — Rendered before the primary line.
 - `--actions <template>` — Right-aligned on the primary line to the terminal width (80 columns when not a TTY, e.g. in a pipe). Plain text, not interactive.
-- `--format <list|json>` — `list` (default) renders the view; `json` passes the original stdin JSON through untouched.
 
 Records are separated by a blank line.
 
@@ -104,44 +103,26 @@ Per-row icon from a field:
 cat people.json | aux4 render list --icon emoji --primary '$firstName $lastName'
 ```
 
-Raw JSON passthrough (for scripting):
-
-```bash
-cat people.json | aux4 render list --primary '$firstName $lastName' --format json
-```
-
-```text
-[{"firstName":"Ada","lastName":"Lovelace","role":"Engineer","status":"active"},{"firstName":"Linus","lastName":"Torvalds","role":"Maintainer","status":"away"}]
-```
-
 ### aux4 render table
 
-Reads a JSON array from stdin and renders a table by delegating to `aux4 2table`. The full 2table structure language is supported (simple columns, nested objects and arrays, renaming, fixed widths, auto-structure).
+Reads a JSON array from stdin and renders an ASCII table by delegating to `aux4 2table`. The full 2table structure language is supported (simple columns, nested objects and arrays, renaming, fixed widths, auto-structure).
 
 Options:
 
 - `table` (positional) — The table structure (column list) to output. Omit to auto-generate.
-- `--format <ascii|md|json>` — `ascii` (default) or `md` forward to `aux4 2table`; `json` passes the original stdin JSON through untouched.
 - `--lineNumbers <true|false>` — Add a first column with line numbers starting from 1 (default: false). Forwarded to 2table.
 - `--showInvalidLines <true|false>` — Show invalid lines as `<invalid line>` instead of skipping them (default: false). Forwarded to 2table.
 
-ASCII table (default):
+ASCII table:
 
 ```bash
 cat people.json | aux4 render table firstName,lastName,role
 ```
 
-Markdown table:
-
-```bash
-cat people.json | aux4 render table --format md firstName,lastName
-```
-
 ```text
-| firstName | lastName |
-| --- | --- |
-| Ada | Lovelace |
-| Linus | Torvalds |
+ firstName  lastName  role
+ Ada        Lovelace  Engineer
+ Linus      Torvalds  Maintainer
 ```
 
 Line numbers and invalid-line handling (forwarded to 2table):
@@ -155,12 +136,6 @@ cat data.json | aux4 render table name,age --lineNumbers true --showInvalidLines
  1  Alice     30
  2  <invalid line>
  3  Charlie   35
-```
-
-Raw JSON passthrough (for scripting):
-
-```bash
-cat people.json | aux4 render table firstName,lastName --format json
 ```
 
 **Note:** `render table` requires the `aux4/2table` package. It is declared as a dependency and installed automatically. If `aux4 2table` is not available at runtime, the command fails with a clear message rather than doing nothing.
