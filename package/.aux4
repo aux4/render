@@ -73,6 +73,27 @@
           }
         },
         {
+          "name": "kv",
+          "execute": [
+            "stdin:node ${packageDir}/lib/aux4-render.mjs kv values(key, value)"
+          ],
+          "help": {
+            "text": "Render a JSON array from stdin as key=value (dotenv-style) lines, one per record.",
+            "variables": [
+              {
+                "name": "key",
+                "text": "Key template (required). Bare field name or $field interpolation. Resolved per record.",
+                "default": ""
+              },
+              {
+                "name": "value",
+                "text": "Value template (required). Bare field name or $field interpolation. Resolved per record.",
+                "default": ""
+              }
+            ]
+          }
+        },
+        {
           "name": "table",
           "execute": [
             "stdin:node ${packageDir}/lib/aux4-render.mjs table values(table, lineNumbers, showInvalidLines)"

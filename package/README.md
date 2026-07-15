@@ -2,10 +2,11 @@
 
 Render a JSON array from standard input as a human-readable view. Pipe the raw JSON output of any aux4 command through `aux4 render` to get a tidy list or table in the terminal.
 
-`aux4/render` provides two commands:
+`aux4/render` provides three commands:
 
 - `aux4 render list` — an MUI-List-style view (icon, primary, secondary, and a right-aligned badge label).
 - `aux4 render table` — a table view that delegates to [`aux4/2table`](https://github.com/aux4/2table).
+- `aux4 render kv` — a flat `key=value` (dotenv-style) view, one line per record.
 
 ## Installation
 
@@ -52,7 +53,7 @@ cat people.json | aux4 render table firstName,lastName,role
 
 ## Field interpolation
 
-Every template flag (`--icon`, `--primary`, `--secondary`, `--badge`) is resolved against the current record using one consistent rule:
+Every template flag (`--icon`, `--primary`, `--secondary`, `--badge`, `--key`, `--value`) is resolved against the current record using one consistent rule:
 
 - **No `$` in the value** — if the record has a field with that name, the field's value is used (2table-style). `--secondary date` renders `record.date`. Dot notation works for nested fields: `--secondary address.city`. If the record has **no** such field, the whole string is used as a literal constant on every row, so `--icon 😀` prints `😀` on each row and `--badge done` prints `done` on each row.
 - **One or more `$field` tokens** — each `$field` is replaced with that record field (empty string when missing) and the rest of the string is kept literal. `--primary '$firstName $lastName'` renders the two fields joined by a space.
@@ -116,6 +117,46 @@ Literal icon on every row (no `emoji` field exists, so the value is used as-is):
 
 ```bash
 cat people.json | aux4 render list --icon 😀 --primary '$firstName $lastName'
+```
+
+### aux4 render kv
+
+Reads a JSON array from stdin and prints one `key=value` (dotenv-style) line per record. Both templates are resolved per record using the same rule as the `list` flags.
+
+Options:
+
+- `--key <template>` — Key template (required). Bare field name or `$field` interpolation.
+- `--value <template>` — Value template (required). Bare field name or `$field` interpolation.
+
+Both `--key` and `--value` are required; if either is omitted the command prints a clear error to stderr and exits `2`.
+
+Input (`settings.json`):
+
+```json
+[
+  { "name": "HOST", "val": "localhost" },
+  { "name": "PORT", "val": "3000" }
+]
+```
+
+```bash
+cat settings.json | aux4 render kv --key name --value val
+```
+
+```text
+HOST=localhost
+PORT=3000
+```
+
+Interpolated value:
+
+```bash
+cat servers.json | aux4 render kv --key name --value '$host:$port'
+```
+
+```text
+web=localhost:3000
+db=db.example.com:5432
 ```
 
 ### aux4 render table

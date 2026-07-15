@@ -3,11 +3,13 @@
 // aux4/render — render a JSON array from stdin as a human-readable list or table.
 //
 // This is a zero-dependency ESM script (Node builtins only), so it is authored
-// directly here rather than bundled. Two actions:
+// directly here rather than bundled. Three actions:
 //   list  <primary> <secondary> <icon> <badge>
 //   table <table> <lineNumbers> <showInvalidLines>
+//   kv    <key> <value>
 //
-// Field interpolation rule (shared by --icon/--primary/--secondary/--badge):
+// Field interpolation rule (shared by --icon/--primary/--secondary/--badge and
+// by --key/--value):
 //   - No "$" in the value  -> if the record HAS that field (dot-notation aware),
 //                             substitute the field's value (2table-style),
 //                             e.g. --secondary date -> record.date. Otherwise the
@@ -203,6 +205,32 @@ function renderTable(args) {
   process.exit(result.status === null ? 1 : result.status);
 }
 
+function renderKv(args) {
+  const keyTpl = args[0] || "";
+  const valueTpl = args[1] || "";
+
+  const raw = readAllStdin();
+
+  // Both --key and --value are required. They deliberately have a "" default in
+  // package/.aux4 (so aux4 never prompts and eats the piped stdin); the check
+  // lives here in the script, mirroring the --primary validation in list.
+  if (!keyTpl) {
+    fail("No --key field provided. Use --key <field>.", 2);
+  }
+  if (!valueTpl) {
+    fail("No --value field provided. Use --value <field>.", 2);
+  }
+
+  const records = parseRecords(raw);
+
+  // One "<resolvedKey>=<resolvedValue>" line per record (dotenv-style key=value).
+  const lines = records.map(record => `${resolve(keyTpl, record)}=${resolve(valueTpl, record)}`);
+
+  if (lines.length > 0) {
+    process.stdout.write(lines.join("\n") + "\n");
+  }
+}
+
 function main() {
   // A downstream consumer (e.g. `| head`) closing early is normal, not an error.
   process.stdout.on("error", e => {
@@ -216,7 +244,8 @@ function main() {
 
   if (action === "list") return renderList(rest);
   if (action === "table") return renderTable(rest);
-  fail(`Invalid action: ${action}. Use "list" or "table".`, 2);
+  if (action === "kv") return renderKv(rest);
+  fail(`Invalid action: ${action}. Use "list", "table", or "kv".`, 2);
 }
 
 main();
