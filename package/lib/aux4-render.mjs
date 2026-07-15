@@ -32,6 +32,10 @@ function readAllStdin() {
   }
 }
 
+// ANSI colors — match aux4/2table's convention (yellow header row): \x1b[33m ... \x1b[0m.
+const YELLOW = "\x1b[33m";
+const RESET = "\x1b[0m";
+
 function stringify(value) {
   if (value === null || value === undefined) return "";
   if (typeof value === "object") return JSON.stringify(value);
@@ -90,14 +94,25 @@ function renderList(args) {
     const actions = actionsTpl ? resolve(actionsTpl, record) : "";
 
     const iconStr = icon ? `${icon} ` : "";
-    const left = iconStr + primary;
+    // Only the primary text is colored yellow; icon, secondary, and actions stay
+    // uncolored. Layout uses the plain (uncolored) length. Trailing-whitespace
+    // trimming is done on the plain text so it is not defeated by the reset code.
+    const plainLeft = iconStr + primary;
 
     const lines = [];
     if (actions) {
-      const gap = Math.max(1, width - left.length - actions.length);
-      lines.push((left + " ".repeat(gap) + actions).replace(/\s+$/, ""));
+      // Actions are right-aligned, so the primary sits mid-line; color it as-is.
+      const gap = Math.max(1, width - plainLeft.length - actions.length);
+      const coloredLeft = iconStr + (primary ? `${YELLOW}${primary}${RESET}` : primary);
+      lines.push((coloredLeft + " ".repeat(gap) + actions).replace(/\s+$/, ""));
     } else {
-      lines.push(left.replace(/\s+$/, ""));
+      // Trim trailing whitespace first, then color the surviving primary text.
+      const displayPrimary = primary.replace(/\s+$/, "");
+      if (displayPrimary) {
+        lines.push(iconStr + `${YELLOW}${displayPrimary}${RESET}`);
+      } else {
+        lines.push(iconStr.replace(/\s+$/, ""));
+      }
     }
     if (secondary) {
       lines.push((" ".repeat(iconStr.length) + secondary).replace(/\s+$/, ""));

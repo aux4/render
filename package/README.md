@@ -74,7 +74,7 @@ Options:
 - `--icon <template>` — Rendered before the primary line.
 - `--actions <template>` — Right-aligned on the primary line to the terminal width (80 columns when not a TTY, e.g. in a pipe). Plain text, not interactive.
 
-Records are separated by a blank line.
+Records are separated by a blank line. In a real terminal the primary text is printed in yellow to stand out; the icon, secondary, and actions stay uncolored. The plain-text examples below do not show the color.
 
 Input (`people.json`):
 

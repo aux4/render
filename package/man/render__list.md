@@ -16,6 +16,7 @@ Layout:
 - The **icon** (when it resolves to a value) is rendered before the primary text.
 - The **actions** label is right-aligned on the primary line to the terminal width (80 columns when the output is not a TTY, e.g. in a pipe). It is plain text, not interactive.
 - The **secondary** line is printed beneath, indented to align under the primary text.
+- The **primary** text is printed in yellow in a real terminal so it stands out; the icon, secondary, and actions stay uncolored. The plain-text example below does not show the color.
 - Records are separated by a blank line.
 
 #### Usage
