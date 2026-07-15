@@ -3,9 +3,10 @@
 // aux4/render — render a JSON array from stdin as a human-readable list or table.
 //
 // This is a zero-dependency ESM script (Node builtins only), so it is authored
-// directly here rather than bundled. Three actions:
+// directly here rather than bundled. Four actions:
 //   list  <primary> <secondary> <icon> <badge>
 //   table <table> <lineNumbers> <showInvalidLines>
+//   csv   <table> <lineNumbers> <showInvalidLines>
 //   kv    <key> <value>
 //
 // Field interpolation rule (shared by --icon/--primary/--secondary/--badge and
@@ -164,7 +165,13 @@ function renderList(args) {
   }
 }
 
-function renderTable(args) {
+// Shared delegation to aux4 2table for both the `table` (ascii) and `csv` commands.
+// `format` selects 2table's output: null/undefined -> ascii (2table's own default,
+// no --format flag), "csv" -> passes --format csv. Everything else (JSON parsing,
+// edge cases, the missing-2table error check) is identical, so the two commands
+// share this one code path rather than duplicating it.
+function delegateToTable(args, format) {
+  const label = format === "csv" ? "csv" : "table";
   const table = args[0] || "";
   const lineNumbers = args[1] || "false";
   const showInvalidLines = args[2] || "false";
@@ -181,23 +188,25 @@ function renderTable(args) {
   }
   const input = JSON.stringify(records);
 
-  // Always render ascii — delegate to aux4 2table with no --format flag so 2table's
-  // own ascii default applies.
-  const forwarded = ["2table", "--lineNumbers", lineNumbers, "--showInvalidLines", showInvalidLines];
+  // Delegate to aux4 2table. For "csv" pass --format csv; for the ascii table
+  // command pass no --format flag so 2table's own ascii default applies.
+  const forwarded = ["2table"];
+  if (format === "csv") forwarded.push("--format", "csv");
+  forwarded.push("--lineNumbers", lineNumbers, "--showInvalidLines", showInvalidLines);
   if (table) forwarded.push(table);
 
   const result = spawnSync("aux4", forwarded, { input, encoding: "utf8" });
 
   if (result.error) {
     if (result.error.code === "ENOENT") {
-      fail("aux4 was not found on PATH. Install aux4 to use 'aux4 render table'.", 5);
+      fail(`aux4 was not found on PATH. Install aux4 to use 'aux4 render ${label}'.`, 5);
     }
     fail(`Failed to run aux4 2table: ${result.error.message}`, 5);
   }
 
   const stderr = result.stderr || "";
   if (result.status !== 0 && /command not found/i.test(stderr) && /2table/i.test(stderr)) {
-    fail("'aux4 render table' requires the aux4/2table package. Install it with: aux4 aux4 pkger install aux4/2table", 5);
+    fail(`'aux4 render ${label}' requires the aux4/2table package. Install it with: aux4 aux4 pkger install aux4/2table`, 5);
   }
 
   if (stderr) process.stderr.write(stderr);
@@ -243,9 +252,10 @@ function main() {
   const rest = argv.slice(1);
 
   if (action === "list") return renderList(rest);
-  if (action === "table") return renderTable(rest);
+  if (action === "table") return delegateToTable(rest);
+  if (action === "csv") return delegateToTable(rest, "csv");
   if (action === "kv") return renderKv(rest);
-  fail(`Invalid action: ${action}. Use "list", "table", or "kv".`, 2);
+  fail(`Invalid action: ${action}. Use "list", "table", "csv", or "kv".`, 2);
 }
 
 main();

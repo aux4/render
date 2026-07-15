@@ -10,7 +10,8 @@
     "json",
     "render",
     "list",
-    "table"
+    "table",
+    "csv"
   ],
   "dependencies": [
     "aux4/2table"
@@ -100,6 +101,33 @@
           ],
           "help": {
             "text": "Render a JSON array from stdin as a table, delegating to aux4 2table.",
+            "variables": [
+              {
+                "name": "table",
+                "text": "The table structure to output (column list), forwarded to aux4 2table.",
+                "default": "",
+                "arg": true
+              },
+              {
+                "name": "lineNumbers",
+                "text": "Add a first column with line numbers starting from 1 (forwarded to aux4 2table).",
+                "default": "false"
+              },
+              {
+                "name": "showInvalidLines",
+                "text": "Show invalid lines as <invalid line> instead of skipping them (forwarded to aux4 2table).",
+                "default": "false"
+              }
+            ]
+          }
+        },
+        {
+          "name": "csv",
+          "execute": [
+            "stdin:node ${packageDir}/lib/aux4-render.mjs csv values(table, lineNumbers, showInvalidLines)"
+          ],
+          "help": {
+            "text": "Render a JSON array from stdin as CSV, delegating to aux4 2table --format csv.",
             "variables": [
               {
                 "name": "table",

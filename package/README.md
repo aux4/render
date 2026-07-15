@@ -2,10 +2,11 @@
 
 Render a JSON array from standard input as a human-readable view. Pipe the raw JSON output of any aux4 command through `aux4 render` to get a tidy list or table in the terminal.
 
-`aux4/render` provides three commands:
+`aux4/render` provides four commands:
 
 - `aux4 render list` — an MUI-List-style view (icon, primary, secondary, and a right-aligned badge label).
 - `aux4 render table` — a table view that delegates to [`aux4/2table`](https://github.com/aux4/2table).
+- `aux4 render csv` — a CSV view that delegates to [`aux4/2table`](https://github.com/aux4/2table).
 - `aux4 render kv` — a flat `key=value` (dotenv-style) view, one line per record.
 
 ## Installation
@@ -21,7 +22,7 @@ This package runs on Node.js. If it is not already available, the installer can 
 - [brew](/r/public/packages/aux4/system-installer-brew)
 - [linux](/r/public/packages/aux4/system-installer-linux)
 
-The `render table` command delegates to `aux4 2table`, which is declared as a package dependency and installed automatically.
+The `render table` and `render csv` commands delegate to `aux4 2table`, which is declared as a package dependency and installed automatically.
 
 ## Quick Start
 
@@ -195,6 +196,39 @@ cat data.json | aux4 render table name,age --lineNumbers true --showInvalidLines
 ```
 
 **Note:** `render table` requires the `aux4/2table` package. It is declared as a dependency and installed automatically. If `aux4 2table` is not available at runtime, the command fails with a clear message rather than doing nothing.
+
+### aux4 render csv
+
+Reads a JSON array from stdin and renders CSV by delegating to `aux4 2table --format csv`. The full 2table structure language is supported (simple columns, nested objects and arrays, renaming, auto-structure). Output is RFC 4180 CSV: a field containing a comma, double quote, or newline is quoted automatically.
+
+Options:
+
+- `table` (positional) — The table structure (column list) to output. Omit to auto-generate.
+- `--lineNumbers <true|false>` — Add a first column with line numbers starting from 1 (default: false). Forwarded to 2table.
+- `--showInvalidLines <true|false>` — Show invalid lines as `<invalid line>` instead of skipping them (default: false). Forwarded to 2table.
+
+Input (`people.json`):
+
+```json
+[
+  { "name": "Alice", "age": 30 },
+  { "name": "Bob, Jr.", "age": 25 }
+]
+```
+
+```bash
+cat people.json | aux4 render csv name,age
+```
+
+```text
+name,age
+Alice,30
+"Bob, Jr.",25
+```
+
+A value containing a comma (`Bob, Jr.`) is quoted automatically, because delegation goes through 2table's RFC 4180 CSV renderer.
+
+**Note:** `render csv` requires the `aux4/2table` package. It is declared as a dependency and installed automatically. If `aux4 2table` is not available at runtime, the command fails with a clear message rather than doing nothing.
 
 ## License
 
