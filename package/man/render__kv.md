@@ -8,21 +8,30 @@ Field selection uses the **same structure grammar** as `render table` / `render 
 - **Nested groups** — `address[street,city]` flattens to **dotted keys**: `address.street=...` and `address.city=...`.
 - **Renaming** — `field:"Label"` (or `field:Label` without quotes) overrides the emitted key name. `address[street:"Street Address"]` emits `Street Address=Main St` — the label replaces the whole key rather than being appended to the dotted path.
 - **Bare object field** — selecting a field that holds a nested object without brackets (e.g. just `address`) emits the whole sub-object as a single JSON value (`address={"street":"Main St","city":"NYC"}`).
-- **Array-valued fields** — an array (e.g. `tags`) is emitted as a single `JSON.stringify`'d value (`tags=["a","b"]`), never expanded into indexed keys.
 
 Column-width modifiers such as `{width:20}` are accepted but silently ignored, so a structure you also use with `table` or `csv` can be pasted unchanged.
 
-If the structure argument is **omitted**, every field of each record is auto-flattened recursively into dotted keys — nested objects are walked to produce dotted paths, while arrays are emitted as a single JSON value.
+If the structure argument is **omitted**, every field of each record is auto-flattened recursively into dotted keys — nested objects are walked to produce dotted paths.
+
+**Array flattening** — arrays are flattened uniformly at every level (including the top-level array of records) into **indexed dotted keys**, using each element's position as a path segment:
+
+- A nested array field `tags: ["a", "b"]` becomes `tags.0=a`, `tags.1=b`. A single-element array is still indexed (`tags.0=a`) — an array is structurally an array regardless of length.
+- Arrays of arrays recurse the same way: `matrix: [[1, 2], [3, 4]]` becomes `matrix.0.0=1`, `matrix.0.1=2`, `matrix.1.0=3`, `matrix.1.1=4`.
+- When the top-level array holds **more than one** record, each record's keys are prefixed with its 0-based index (`0.name=Alice`, `1.name=Bob`), so record boundaries are unambiguous.
+- **Exception:** a single record gets **no** index prefix — a lone JSON object, a one-element array, or a record picked with `--index N` is treated as *the* record (`name=Alice`, not `0.name=Alice`).
+
+**`--index <N>`** — an optional 0-based index selecting a **single** record from the top-level array before the rest of the pipeline runs (structure selection, flattening, output). The selected record is rendered on its own with no index prefix, and composes with an explicit structure argument. An out-of-range index (`N` ≥ record count, or `N` < 0) or a non-integer value prints a clear error to stderr and exits `1`. Omit it (or pass an empty value) to render every record.
 
 Input handling: a single JSON object is treated as a one-item array; an empty array (`[]`) prints nothing and exits `0`; invalid/non-JSON input prints a clear error to stderr and exits `1`.
 
 #### Usage
 
 ```bash
-cat data.json | aux4 render kv [<structure>]
+cat data.json | aux4 render kv [<structure>] [--index <N>]
 ```
 
 structure  Optional. Comma-separated field structure (`field`, `field[sub1,sub2]`, `field:"Label"`). Omit to auto-flatten every field into dotted keys.
+--index    Optional. 0-based index selecting a single record from the top-level array, rendered with no index prefix. Out of range exits 1.
 
 #### Example
 
@@ -46,7 +55,7 @@ address.street=Main St
 City=NYC
 ```
 
-No structure — auto-flatten every field:
+No structure — auto-flatten every field (arrays become indexed keys):
 
 ```bash
 cat person.json | aux4 render kv
@@ -56,5 +65,31 @@ cat person.json | aux4 render kv
 name=Alice
 address.street=Main St
 address.city=NYC
-tags=["a","b"]
+tags.0=a
+tags.1=b
+```
+
+Multiple records — each record is prefixed with its 0-based index:
+
+```bash
+echo '[{"name":"Alice","tags":["a","b"]},{"name":"Bob","tags":["c"]}]' | aux4 render kv
+```
+
+```text
+0.name=Alice
+0.tags.0=a
+0.tags.1=b
+1.name=Bob
+1.tags.0=c
+```
+
+Select a single record with `--index` (rendered with no prefix):
+
+```bash
+echo '[{"name":"Alice","tags":["a","b"]},{"name":"Bob","tags":["c"]}]' | aux4 render kv --index 1
+```
+
+```text
+name=Bob
+tags.0=c
 ```

@@ -7,7 +7,7 @@
 //   list  <primary> <secondary> <icon> <badge>
 //   table <table> <lineNumbers> <showInvalidLines>
 //   csv   <table> <lineNumbers> <showInvalidLines>
-//   kv    [<structure>]
+//   kv    [<structure>] [<index>]
 //
 // Field interpolation rule (shared by --icon/--primary/--secondary/--badge):
 //   - No "$" in the value  -> if the record HAS that field (dot-notation aware),
@@ -307,32 +307,89 @@ function collectKvLeaves(items, parentPath) {
   return leaves;
 }
 
-// Auto-flatten a record into ordered { key, value } pairs: walk every field,
-// recursing into plain nested objects to produce dotted keys. Arrays (and empty
-// objects) are emitted as a single JSON.stringify'd value, never expanded.
-function autoFlatten(record) {
+// Recursively flatten any value into ordered { key, value } pairs under `path`.
+// The rule is uniform for every level of nesting:
+//   - Plain non-empty object -> recurse into each field, producing dotted keys
+//     (address.street=...).
+//   - Non-empty array -> recurse into each element using its INDEX as the next
+//     path segment (tags.0=a, tags.1=b; arrays of arrays -> matrix.0.0=1). This
+//     is the same treatment an object gets — an array's "keys" are just its
+//     numeric indices.
+//   - Everything else (primitive, null, empty object, empty array) is a leaf,
+//     emitted as a single stringify'd value (empty object -> {}, empty array
+//     -> [], so the key never silently disappears).
+// The root single-item exception (a lone record gets no index prefix) is handled
+// by the caller in renderKv, not here — this helper always indexes arrays.
+function flatten(value, path, out) {
+  if (Array.isArray(value)) {
+    if (value.length === 0) {
+      out.push({ key: path, value: "[]" });
+      return;
+    }
+    value.forEach((element, i) => {
+      flatten(element, path ? `${path}.${i}` : String(i), out);
+    });
+    return;
+  }
+  if (value !== null && typeof value === "object") {
+    const keys = Object.keys(value);
+    if (keys.length === 0) {
+      out.push({ key: path, value: "{}" });
+      return;
+    }
+    for (const key of keys) {
+      flatten(value[key], path ? `${path}.${key}` : key, out);
+    }
+    return;
+  }
+  out.push({ key: path, value: stringify(value) });
+}
+
+// Build the { key, value } pairs for a single record under `basePrefix` (""
+// for a lone record, "N" when the root array has multiple records). With an
+// explicit structure each selected leaf is emitted directly; a leaf that
+// resolves to an array is expanded into indexed keys (tags.0=a), while a bare
+// object leaf keeps its whole-object JSON value (use brackets to expand it).
+// With no structure the whole record is flattened recursively.
+function recordPairs(record, basePrefix, leaves) {
   const out = [];
-  const walk = (obj, prefix) => {
-    if (obj === null || typeof obj !== "object") return;
-    for (const key of Object.keys(obj)) {
-      const value = obj[key];
-      const path = prefix ? `${prefix}.${key}` : key;
-      if (value !== null && typeof value === "object" && !Array.isArray(value) && Object.keys(value).length > 0) {
-        walk(value, path);
+  if (leaves) {
+    for (const leaf of leaves) {
+      const key = basePrefix ? `${basePrefix}.${leaf.key}` : leaf.key;
+      const value = getField(record, leaf.path);
+      if (Array.isArray(value)) {
+        flatten(value, key, out);
       } else {
-        out.push({ key: path, value: stringify(value) });
+        out.push({ key, value: stringify(value) });
       }
     }
-  };
-  walk(record, "");
+  } else {
+    flatten(record, basePrefix, out);
+  }
   return out;
 }
 
 function renderKv(args) {
   const structure = (args[0] || "").trim();
+  const indexArg = (args[1] || "").trim();
 
   const raw = readAllStdin();
-  const records = parseRecords(raw);
+  let records = parseRecords(raw);
+
+  // Optional --index N selects a single record (0-based) from the top-level
+  // array before anything else runs. An empty/unset value means "process every
+  // record". A non-integer or out-of-range value is a hard error (exit 1),
+  // matching the invalid-JSON convention for bad input.
+  if (indexArg !== "") {
+    const n = Number(indexArg);
+    if (!Number.isInteger(n)) {
+      fail(`Invalid --index "${indexArg}": expected a non-negative integer.`, 1);
+    }
+    if (n < 0 || n >= records.length) {
+      fail(`--index ${n} is out of range: ${records.length} record(s) available.`, 1);
+    }
+    records = [records[n]];
+  }
 
   // When a structure is given, resolve it once into an ordered list of leaves;
   // otherwise each record is auto-flattened into all of its (dotted) fields.
@@ -345,18 +402,18 @@ function renderKv(args) {
     }
   }
 
+  // Root single-item exception (RENDER-006): a lone record — whether the input
+  // was a single object, a one-element array, or the result of --index N — is
+  // THE record and gets no index prefix. Multiple records each get an "N."
+  // prefix so record boundaries stay unambiguous.
+  const single = records.length === 1;
   const lines = [];
-  for (const record of records) {
-    if (leaves) {
-      for (const leaf of leaves) {
-        lines.push(`${leaf.key}=${stringify(getField(record, leaf.path))}`);
-      }
-    } else {
-      for (const pair of autoFlatten(record)) {
-        lines.push(`${pair.key}=${pair.value}`);
-      }
+  records.forEach((record, i) => {
+    const basePrefix = single ? "" : String(i);
+    for (const pair of recordPairs(record, basePrefix, leaves)) {
+      lines.push(`${pair.key}=${pair.value}`);
     }
-  }
+  });
 
   if (lines.length > 0) {
     process.stdout.write(lines.join("\n") + "\n");

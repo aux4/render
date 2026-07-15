@@ -76,7 +76,7 @@
         {
           "name": "kv",
           "execute": [
-            "stdin:node ${packageDir}/lib/aux4-render.mjs kv values(structure)"
+            "stdin:node ${packageDir}/lib/aux4-render.mjs kv values(structure, index)"
           ],
           "help": {
             "text": "Render a JSON array from stdin as key=value (dotenv-style) lines, flattening each record's fields.",
@@ -85,6 +85,11 @@
                 "name": "structure",
                 "text": "Optional field structure (same grammar as render table/csv): comma-separated fields, field[sub1,sub2] nesting, field:\"Label\" rename. Omit to auto-flatten every field into dotted keys.",
                 "arg": true,
+                "default": ""
+              },
+              {
+                "name": "index",
+                "text": "Optional 0-based index selecting a single record from the top-level array. The selected record is rendered with no index prefix. Out of range exits 1. Omit to render every record.",
                 "default": ""
               }
             ]
