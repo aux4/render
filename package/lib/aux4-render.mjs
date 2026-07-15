@@ -4,12 +4,15 @@
 //
 // This is a zero-dependency ESM script (Node builtins only), so it is authored
 // directly here rather than bundled. Two actions:
-//   list  <primary> <secondary> <icon> <actions>
+//   list  <primary> <secondary> <icon> <badge>
 //   table <table> <lineNumbers> <showInvalidLines>
 //
-// Field interpolation rule (shared by --icon/--primary/--secondary/--actions):
-//   - No "$" in the value  -> the whole string is a bare field name (2table-style),
-//                             e.g. --secondary date -> record.date
+// Field interpolation rule (shared by --icon/--primary/--secondary/--badge):
+//   - No "$" in the value  -> if the record HAS that field (dot-notation aware),
+//                             substitute the field's value (2table-style),
+//                             e.g. --secondary date -> record.date. Otherwise the
+//                             whole string is used as a literal constant on every
+//                             row, e.g. --icon 😀 or --badge done.
 //   - One or more $field    -> each $field is replaced with record[field] (empty
 //     tokens                  string when missing), the rest stays literal,
 //                             e.g. --primary "$firstName $lastName"
@@ -49,11 +52,31 @@ function getField(obj, path) {
   return path.split(".").reduce((acc, key) => (acc === null || acc === undefined ? undefined : acc[key]), obj);
 }
 
+// Does the record actually contain this field path? Dot-notation aware, matching
+// getField's convention: every segment must exist as an own property.
+function hasField(obj, path) {
+  if (obj === null || obj === undefined) return false;
+  let cur = obj;
+  for (const key of path.split(".")) {
+    if (cur === null || typeof cur !== "object" || !Object.prototype.hasOwnProperty.call(cur, key)) {
+      return false;
+    }
+    cur = cur[key];
+  }
+  return true;
+}
+
 // Apply the field interpolation rule to a single template value.
 function resolve(template, record) {
   if (template === undefined || template === null || template === "") return "";
   if (template.indexOf("$") === -1) {
-    return stringify(getField(record, template.trim()));
+    const path = template.trim();
+    // Bare value: use the field's value when the record has that key; otherwise
+    // fall back to treating the whole string as a literal constant for every row.
+    if (hasField(record, path)) {
+      return stringify(getField(record, path));
+    }
+    return template;
   }
   return template.replace(/\$([A-Za-z_][A-Za-z0-9_.]*)/g, (_match, path) => stringify(getField(record, path)));
 }
@@ -76,7 +99,7 @@ function renderList(args) {
   const primaryTpl = args[0] || "";
   const secondaryTpl = args[1] || "";
   const iconTpl = args[2] || "";
-  const actionsTpl = args[3] || "";
+  const badgeTpl = args[3] || "";
 
   const raw = readAllStdin();
 
@@ -91,20 +114,20 @@ function renderList(args) {
     const icon = resolve(iconTpl, record);
     const primary = resolve(primaryTpl, record);
     const secondary = secondaryTpl ? resolve(secondaryTpl, record) : "";
-    const actions = actionsTpl ? resolve(actionsTpl, record) : "";
+    const badge = badgeTpl ? resolve(badgeTpl, record) : "";
 
     const iconStr = icon ? `${icon} ` : "";
-    // Only the primary text is colored yellow; icon, secondary, and actions stay
+    // Only the primary text is colored yellow; icon, secondary, and badge stay
     // uncolored. Layout uses the plain (uncolored) length. Trailing-whitespace
     // trimming is done on the plain text so it is not defeated by the reset code.
     const plainLeft = iconStr + primary;
 
     const lines = [];
-    if (actions) {
-      // Actions are right-aligned, so the primary sits mid-line; color it as-is.
-      const gap = Math.max(1, width - plainLeft.length - actions.length);
+    if (badge) {
+      // The badge is right-aligned, so the primary sits mid-line; color it as-is.
+      const gap = Math.max(1, width - plainLeft.length - badge.length);
       const coloredLeft = iconStr + (primary ? `${YELLOW}${primary}${RESET}` : primary);
-      lines.push((coloredLeft + " ".repeat(gap) + actions).replace(/\s+$/, ""));
+      lines.push((coloredLeft + " ".repeat(gap) + badge).replace(/\s+$/, ""));
     } else {
       // Trim trailing whitespace first, then color the surviving primary text.
       const displayPrimary = primary.replace(/\s+$/, "");

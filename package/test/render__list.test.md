@@ -75,9 +75,44 @@ cat people.json | aux4 render list --icon emoji --primary name
 * Alice
 ```
 
-## actions
+### should render a literal icon when the value is not a field name
 
-### should right-align the actions label to width 80
+```file:people.json
+[
+  { "name": "Alice" },
+  { "name": "Bob" }
+]
+```
+
+```execute
+cat people.json | aux4 render list --primary name --icon X
+```
+
+```expect
+X Alice
+
+X Bob
+```
+
+### should prefer the field value over a literal when the key exists
+
+```file:people.json
+[
+  { "name": "Alice", "emoji": "@" }
+]
+```
+
+```execute
+cat people.json | aux4 render list --primary name --icon emoji
+```
+
+```expect
+@ Alice
+```
+
+## badge
+
+### should right-align the badge label to width 80
 
 ```file:people.json
 [
@@ -86,11 +121,27 @@ cat people.json | aux4 render list --icon emoji --primary name
 ```
 
 ```execute
-cat people.json | aux4 render list --primary name --actions status
+cat people.json | aux4 render list --primary name --badge status
 ```
 
 ```expect:regex
 ^Alice {69}active$
+```
+
+### should render a literal badge when the value is not a field name
+
+```file:people.json
+[
+  { "name": "Alice" }
+]
+```
+
+```execute
+cat people.json | aux4 render list --primary name --badge done
+```
+
+```expect:regex
+^Alice {71}done$
 ```
 
 ## missing primary

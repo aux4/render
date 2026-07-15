@@ -4,7 +4,7 @@ Render a JSON array from standard input as a human-readable view. Pipe the raw J
 
 `aux4/render` provides two commands:
 
-- `aux4 render list` — an MUI-List-style view (icon, primary, secondary, and a right-aligned actions label).
+- `aux4 render list` — an MUI-List-style view (icon, primary, secondary, and a right-aligned badge label).
 - `aux4 render table` — a table view that delegates to [`aux4/2table`](https://github.com/aux4/2table).
 
 ## Installation
@@ -27,7 +27,7 @@ The `render table` command delegates to `aux4 2table`, which is declared as a pa
 Given a JSON array on standard input, render it as a list:
 
 ```bash
-cat people.json | aux4 render list --primary '$firstName $lastName' --secondary role --actions status
+cat people.json | aux4 render list --primary '$firstName $lastName' --secondary role --badge status
 ```
 
 ```text
@@ -52,14 +52,14 @@ cat people.json | aux4 render table firstName,lastName,role
 
 ## Field interpolation
 
-Every template flag (`--icon`, `--primary`, `--secondary`, `--actions`) is resolved against the current record using one consistent rule:
+Every template flag (`--icon`, `--primary`, `--secondary`, `--badge`) is resolved against the current record using one consistent rule:
 
-- **No `$` in the value** — the whole string is treated as a bare field name (2table-style). `--secondary date` renders `record.date`. Dot notation works for nested fields: `--secondary address.city`.
+- **No `$` in the value** — if the record has a field with that name, the field's value is used (2table-style). `--secondary date` renders `record.date`. Dot notation works for nested fields: `--secondary address.city`. If the record has **no** such field, the whole string is used as a literal constant on every row, so `--icon 😀` prints `😀` on each row and `--badge done` prints `done` on each row.
 - **One or more `$field` tokens** — each `$field` is replaced with that record field (empty string when missing) and the rest of the string is kept literal. `--primary '$firstName $lastName'` renders the two fields joined by a space.
 
 The tokens are deliberately bare `$field`, **not** `${...}`. This keeps them clear of aux4's own execute-line `${...}` substitution. Single-quote the flag in your shell (`--primary '$firstName $lastName'`) so the shell itself does not expand `$field` before aux4 sees it.
 
-**Note:** because a value with no `$` is always looked up as a field name, a literal constant icon such as `--icon 👤` is treated as the (normally absent) field named `👤`, so no icon shows. To render an icon per row, point `--icon` at a field that holds the glyph, e.g. `--icon emoji`.
+**Note:** field lookup takes precedence over the literal fallback. `--icon emoji` uses the `emoji` field when the record has one; only when no `emoji` field exists is the string rendered literally.
 
 ## Commands
 
@@ -72,9 +72,9 @@ Options:
 - `--primary <template>` — Primary line (required). Bare field name or `$field` interpolation.
 - `--secondary <template>` — Secondary line, printed beneath the primary and indented to align under it.
 - `--icon <template>` — Rendered before the primary line.
-- `--actions <template>` — Right-aligned on the primary line to the terminal width (80 columns when not a TTY, e.g. in a pipe). Plain text, not interactive.
+- `--badge <template>` — Right-aligned on the primary line to the terminal width (80 columns when not a TTY, e.g. in a pipe). Plain text, not interactive.
 
-Records are separated by a blank line. In a real terminal the primary text is printed in yellow to stand out; the icon, secondary, and actions stay uncolored. The plain-text examples below do not show the color.
+Records are separated by a blank line. In a real terminal the primary text is printed in yellow to stand out; the icon, secondary, and badge stay uncolored. The plain-text examples below do not show the color.
 
 Input (`people.json`):
 
@@ -86,7 +86,7 @@ Input (`people.json`):
 ```
 
 ```bash
-cat people.json | aux4 render list --primary '$firstName $lastName' --secondary role --actions status
+cat people.json | aux4 render list --primary '$firstName $lastName' --secondary role --badge status
 ```
 
 ```text
@@ -101,6 +101,12 @@ Per-row icon from a field:
 
 ```bash
 cat people.json | aux4 render list --icon emoji --primary '$firstName $lastName'
+```
+
+Literal icon on every row (no `emoji` field exists, so the value is used as-is):
+
+```bash
+cat people.json | aux4 render list --icon 😀 --primary '$firstName $lastName'
 ```
 
 ### aux4 render table

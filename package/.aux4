@@ -43,10 +43,10 @@
         {
           "name": "list",
           "execute": [
-            "stdin:node ${packageDir}/lib/aux4-render.mjs list values(primary, secondary, icon, actions)"
+            "stdin:node ${packageDir}/lib/aux4-render.mjs list values(primary, secondary, icon, badge)"
           ],
           "help": {
-            "text": "Render a JSON array from stdin as a MUI-List-style view (icon, primary, secondary, actions).",
+            "text": "Render a JSON array from stdin as a MUI-List-style view (icon, primary, secondary, badge).",
             "variables": [
               {
                 "name": "primary",
@@ -65,8 +65,8 @@
                 "default": ""
               },
               {
-                "name": "actions",
-                "text": "Actions template, rendered right-aligned on the primary line (plain text, not interactive).",
+                "name": "badge",
+                "text": "Badge template, rendered right-aligned on the primary line (plain text, not interactive).",
                 "default": ""
               }
             ]
