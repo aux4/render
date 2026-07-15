@@ -144,6 +144,84 @@ cat people.json | aux4 render list --primary name --badge done
 ^Alice {71}done$
 ```
 
+## long primary
+
+### should truncate an overlong primary with an ellipsis and keep the badge right-aligned
+
+When the primary text is longer than the available width (80 columns when not a TTY, minus the badge plus a one-space gap), it is truncated with a trailing `…` so the badge still right-aligns to width 80. Here the badge `done` reserves 5 columns (4 + one gap), leaving 75 for the primary: 74 characters survive plus the ellipsis.
+
+```file:long.json
+[
+  { "title": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx", "status": "done" }
+]
+```
+
+```execute
+cat long.json | aux4 render list --primary title --badge status
+```
+
+```expect:regex
+^x{74}… done$
+```
+
+### should truncate an overlong primary with an ellipsis when there is no badge
+
+Without a badge the primary is truncated to fit the full width (80 columns): 79 characters survive plus the ellipsis.
+
+```file:long.json
+[
+  { "title": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" }
+]
+```
+
+```execute
+cat long.json | aux4 render list --primary title
+```
+
+```expect:regex
+^x{79}…$
+```
+
+## empty array
+
+### should print nothing and exit 0 for an empty array
+
+```execute
+echo '[]' | aux4 render list --primary title; echo "exit=$?"
+```
+
+```expect
+exit=0
+```
+
+## single object
+
+### should treat a single object as a one-item array
+
+```execute
+echo '{"name":"Alice"}' | aux4 render list --primary name
+```
+
+```expect
+Alice
+```
+
+## invalid json
+
+### should fail with a clear error and exit 1 on non-JSON stdin
+
+```execute
+echo 'not json' | aux4 render list --primary title; echo "exit=$?"
+```
+
+```expect
+exit=1
+```
+
+```error:partial
+Invalid JSON on stdin: *?
+```
+
 ## missing primary
 
 ### should fail fast with a clear error when --primary is omitted

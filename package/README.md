@@ -61,6 +61,15 @@ The tokens are deliberately bare `$field`, **not** `${...}`. This keeps them cle
 
 **Note:** field lookup takes precedence over the literal fallback. `--icon emoji` uses the `emoji` field when the record has one; only when no `emoji` field exists is the string rendered literally.
 
+## Input handling
+
+Both commands read JSON from standard input and handle these cases consistently:
+
+- **JSON array** — rendered as usual, one row per element.
+- **A single JSON object** (not wrapped in an array) — treated as a one-item array and rendered normally.
+- **An empty array (`[]`)** — a clean no-op: nothing is printed and the command exits `0`.
+- **Invalid / non-JSON input** — the command prints a clear error to stderr and exits `1`.
+
 ## Commands
 
 ### aux4 render list
@@ -69,7 +78,7 @@ Reads a JSON array from stdin and prints one block per record.
 
 Options:
 
-- `--primary <template>` — Primary line (required). Bare field name or `$field` interpolation.
+- `--primary <template>` — Primary line (required). Bare field name or `$field` interpolation. A list item's primary is a single line: when it is too long to fit the terminal width (accounting for the icon prefix and the badge, if present), it is truncated with a trailing `…` rather than wrapping.
 - `--secondary <template>` — Secondary line, printed beneath the primary and indented to align under it.
 - `--icon <template>` — Rendered before the primary line.
 - `--badge <template>` — Right-aligned on the primary line to the terminal width (80 columns when not a TTY, e.g. in a pipe). Plain text, not interactive.

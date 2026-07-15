@@ -17,7 +17,10 @@ Layout:
 - The **badge** label is right-aligned on the primary line to the terminal width (80 columns when the output is not a TTY, e.g. in a pipe). It is plain text, not interactive.
 - The **secondary** line is printed beneath, indented to align under the primary text.
 - The **primary** text is printed in yellow in a real terminal so it stands out; the icon, secondary, and badge stay uncolored. The plain-text example below does not show the color.
+- The **primary** is a single line by design (like MUI's `ListItemText`): when it is too long to fit within the terminal width — after reserving room for the icon prefix and the badge plus a one-space gap when a badge is present — it is truncated with a trailing `…` rather than wrapping to multiple lines. This keeps the badge correctly right-aligned.
 - Records are separated by a blank line.
+
+Input handling: a single JSON object is treated as a one-item array; an empty array (`[]`) prints nothing and exits `0`; invalid/non-JSON input prints a clear error to stderr and exits `1`.
 
 #### Usage
 

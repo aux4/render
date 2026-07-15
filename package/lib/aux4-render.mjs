@@ -88,11 +88,13 @@ function parseRecords(raw) {
   try {
     value = JSON.parse(trimmed);
   } catch (e) {
-    fail(`Invalid JSON on stdin: ${e.message}`, 3);
+    fail(`Invalid JSON on stdin: ${e.message}`, 1);
   }
+  // A single object is treated as a 1-item array; an array is used as-is (an empty
+  // array yields an empty list, which the callers render as no output).
   if (Array.isArray(value)) return value;
   if (value && typeof value === "object") return [value];
-  fail("Expected a JSON array (or object) on stdin.", 3);
+  fail("Expected a JSON array (or object) on stdin.", 1);
 }
 
 function renderList(args) {
@@ -117,22 +119,34 @@ function renderList(args) {
     const badge = badgeTpl ? resolve(badgeTpl, record) : "";
 
     const iconStr = icon ? `${icon} ` : "";
+
+    // A list item's primary is a single line by design (like MUI's ListItemText,
+    // which truncates with an ellipsis rather than wrapping). Truncate the plain
+    // primary text to fit within the terminal width, reserving room for the icon
+    // prefix and — when a badge is present — the badge plus a one-space gap.
+    const reservedForBadge = badge ? badge.length + 1 : 0;
+    const availableForPrimary = width - iconStr.length - reservedForBadge;
+    const primaryFits = availableForPrimary <= 0 || primary.length <= availableForPrimary;
+    const displayPrimary = primaryFits
+      ? primary
+      : primary.slice(0, Math.max(0, availableForPrimary - 1)) + "…";
+
     // Only the primary text is colored yellow; icon, secondary, and badge stay
     // uncolored. Layout uses the plain (uncolored) length. Trailing-whitespace
     // trimming is done on the plain text so it is not defeated by the reset code.
-    const plainLeft = iconStr + primary;
+    const plainLeft = iconStr + displayPrimary;
 
     const lines = [];
     if (badge) {
       // The badge is right-aligned, so the primary sits mid-line; color it as-is.
       const gap = Math.max(1, width - plainLeft.length - badge.length);
-      const coloredLeft = iconStr + (primary ? `${YELLOW}${primary}${RESET}` : primary);
+      const coloredLeft = iconStr + (displayPrimary ? `${YELLOW}${displayPrimary}${RESET}` : displayPrimary);
       lines.push((coloredLeft + " ".repeat(gap) + badge).replace(/\s+$/, ""));
     } else {
       // Trim trailing whitespace first, then color the surviving primary text.
-      const displayPrimary = primary.replace(/\s+$/, "");
-      if (displayPrimary) {
-        lines.push(iconStr + `${YELLOW}${displayPrimary}${RESET}`);
+      const trimmedPrimary = displayPrimary.replace(/\s+$/, "");
+      if (trimmedPrimary) {
+        lines.push(iconStr + `${YELLOW}${trimmedPrimary}${RESET}`);
       } else {
         lines.push(iconStr.replace(/\s+$/, ""));
       }
@@ -155,12 +169,22 @@ function renderTable(args) {
 
   const raw = readAllStdin();
 
+  // Validate/normalize the JSON here so we give a clear error (exit 1) on invalid
+  // input rather than relying on 2table, wrap a single object into a 1-item array,
+  // and treat an empty array as a clean no-op (print nothing, exit 0) — 2table
+  // itself errors on an empty array.
+  const records = parseRecords(raw);
+  if (records.length === 0) {
+    process.exit(0);
+  }
+  const input = JSON.stringify(records);
+
   // Always render ascii — delegate to aux4 2table with no --format flag so 2table's
   // own ascii default applies.
   const forwarded = ["2table", "--lineNumbers", lineNumbers, "--showInvalidLines", showInvalidLines];
   if (table) forwarded.push(table);
 
-  const result = spawnSync("aux4", forwarded, { input: raw, encoding: "utf8" });
+  const result = spawnSync("aux4", forwarded, { input, encoding: "utf8" });
 
   if (result.error) {
     if (result.error.code === "ENOENT") {

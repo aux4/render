@@ -6,6 +6,8 @@ The output is always ASCII — the command delegates to `aux4 2table` with no `-
 
 **Requires the `aux4/2table` package.** It is declared as a dependency, so installing `aux4/render` pulls it in. If `aux4 2table` is not available at runtime, the command fails with a clear message instead of silently doing nothing.
 
+Input handling: a single JSON object is treated as a one-item array; an empty array (`[]`) prints nothing and exits `0` (rather than surfacing 2table's "Input array cannot be empty" error); invalid/non-JSON input prints a clear error to stderr and exits `1` before 2table is invoked.
+
 #### Usage
 
 ```bash
