@@ -96,6 +96,28 @@
           }
         },
         {
+          "name": "yaml",
+          "execute": [
+            "stdin:node ${packageDir}/lib/aux4-render.mjs yaml values(structure, index)"
+          ],
+          "help": {
+            "text": "Render a JSON array from stdin as YAML, preserving nesting (optionally selecting fields with the same structure grammar as render kv).",
+            "variables": [
+              {
+                "name": "structure",
+                "text": "Optional field structure (same grammar as render kv/table/csv): comma-separated fields, field[sub1,sub2] nesting, field:\"Label\" rename. Unlike kv the selection stays nested in the YAML output instead of flattening to dotted keys. Omit to dump the full record.",
+                "arg": true,
+                "default": ""
+              },
+              {
+                "name": "index",
+                "text": "Optional 0-based index selecting a single record from the top-level array. The selected record is rendered as a single YAML mapping. Out of range exits 1. Omit to render every record as a YAML sequence.",
+                "default": ""
+              }
+            ]
+          }
+        },
+        {
           "name": "table",
           "execute": [
             "stdin:node ${packageDir}/lib/aux4-render.mjs table values(table, lineNumbers, showInvalidLines)"

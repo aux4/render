@@ -8,6 +8,7 @@ Render a JSON array from standard input as a human-readable view. Pipe the raw J
 - `aux4 render table` — a table view that delegates to [`aux4/2table`](https://github.com/aux4/2table).
 - `aux4 render csv` — a CSV view that delegates to [`aux4/2table`](https://github.com/aux4/2table).
 - `aux4 render kv` — a flat `key=value` (dotenv-style) view that flattens each record's fields, using the same structure grammar as `render table`/`csv`.
+- `aux4 render yaml` — a YAML view that preserves nesting, using the same structure grammar as `render kv` (but keeps the selection nested instead of flattening it).
 
 ## Installation
 
@@ -250,6 +251,78 @@ echo '[{"name":"Alice","tags":["a","b"]},{"name":"Bob","tags":["c"]}]' | aux4 re
 ```text
 name=Bob
 tags.0=c
+```
+
+### aux4 render yaml
+
+Reads a JSON array from stdin and prints it as **YAML**, preserving nesting. It shares the **same structure grammar** as `render kv` for selecting fields, but unlike `kv` — which flattens the selection into dotted `key=value` lines — `yaml` keeps the selection **nested** in the output.
+
+- `structure` (positional, optional) — comma-separated fields with the usual grammar:
+  - `name,age,city` — select those top-level fields.
+  - `address[street,city]` — nested groups stay **nested**: an `address:` mapping with `street`/`city` under it (**not** flat `address.street`/`address.city` keys).
+  - `field:"Label"` (or `field:Label`) — rename the emitted key. `address[street,city:"City"]` emits a `City:` key inside the nested `address` mapping.
+  - Applying a `field[...]` group to an array projects each element through the group, producing a YAML sequence of nested mappings.
+  - Column-width modifiers like `{width:20}` are accepted but silently ignored, so a structure you also use with `table`/`csv`/`kv` can be pasted unchanged.
+- `--index <N>` (optional) — 0-based index selecting a **single** record from the top-level array before serialization. The selected record is rendered as a single YAML mapping. An out-of-range index (`N` ≥ record count, or `N` < 0) prints a clear error to stderr and exits `1`. Omit it to render every record.
+
+Omit the structure to dump the full record as-is — there is no flattening step, since YAML represents nested structure natively.
+
+A single record (a lone JSON object, a one-element array, or a record picked with `--index N`) is dumped as a single YAML **mapping**; multiple records are dumped as a YAML **sequence** of mappings.
+
+Input (`person.json`):
+
+```json
+[
+  { "name": "Alice", "address": { "street": "Main St", "city": "NYC", "zip": "10001" } }
+]
+```
+
+Explicit structure with a nested group and a rename (nesting preserved, `zip` dropped):
+
+```bash
+cat person.json | aux4 render yaml 'name,address[street,city:"City"]'
+```
+
+```text
+name: Alice
+address:
+  street: Main St
+  City: NYC
+```
+
+No structure — dump the full record:
+
+```bash
+cat person.json | aux4 render yaml
+```
+
+```text
+name: Alice
+address:
+  street: Main St
+  city: NYC
+  zip: '10001'
+```
+
+Multiple records — dumped as a YAML sequence:
+
+```bash
+echo '[{"name":"Alice"},{"name":"Bob"}]' | aux4 render yaml
+```
+
+```text
+- name: Alice
+- name: Bob
+```
+
+Select a single record with `--index` (rendered as a single mapping):
+
+```bash
+echo '[{"name":"Alice"},{"name":"Bob"}]' | aux4 render yaml --index 1
+```
+
+```text
+name: Bob
 ```
 
 ### aux4 render table

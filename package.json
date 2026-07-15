@@ -1,11 +1,11 @@
 {
   "name": "@aux4/render",
   "version": "0.0.1",
-  "description": "Render a JSON array from stdin as a human-readable list or table",
+  "description": "Render a JSON array from stdin as a human-readable list, table, csv, key=value, or yaml view",
   "type": "module",
   "preferGlobal": true,
   "scripts": {
-    "build": "node --check package/lib/aux4-render.mjs && echo 'aux4/render is a zero-dependency script; nothing to bundle.'"
+    "build": "rollup -c"
   },
   "keywords": [
     "aux4",
@@ -13,8 +13,18 @@
     "json",
     "render",
     "list",
-    "table"
+    "table",
+    "yaml"
   ],
   "author": "aux4 LLC",
-  "license": "Apache-2.0"
+  "license": "Apache-2.0",
+  "dependencies": {
+    "js-yaml": "^4.1.0"
+  },
+  "devDependencies": {
+    "@rollup/plugin-commonjs": "^28.0.6",
+    "@rollup/plugin-json": "^6.1.0",
+    "@rollup/plugin-node-resolve": "^16.0.1",
+    "rollup": "^4.50.0"
+  }
 }
