@@ -92,3 +92,27 @@ cat people.json | aux4 render list --primary name --actions status
 ```expect:regex
 ^Alice {69}active$
 ```
+
+## missing primary
+
+### should fail fast with a clear error when --primary is omitted
+
+When no `--primary` is given, the command must not prompt (which would eat the piped JSON) — it invokes the script, which fails immediately with an error on stderr and a non-zero exit.
+
+```file:people.json
+[
+  { "title": "a" }
+]
+```
+
+```execute
+cat people.json | aux4 render list; echo "exit=$?"
+```
+
+```expect
+exit=2
+```
+
+```error:partial
+No --primary template provided. Use --primary <field-or-template>.
+```

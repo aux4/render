@@ -51,7 +51,8 @@
               {
                 "name": "primary",
                 "text": "Primary line template. A bare field name (e.g. name) or a string with $field tokens (e.g. \"$firstName $lastName\").",
-                "arg": true
+                "arg": true,
+                "default": ""
               },
               {
                 "name": "secondary",
