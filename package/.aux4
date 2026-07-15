@@ -1,0 +1,123 @@
+{
+  "scope": "aux4",
+  "name": "render",
+  "version": "0.0.1",
+  "description": "Render a JSON array from stdin as a human-readable list or table.",
+  "license": "Apache-2.0",
+  "git": "https://github.com/aux4/render",
+  "tags": [
+    "aux4",
+    "json",
+    "render",
+    "list",
+    "table"
+  ],
+  "dependencies": [
+    "aux4/2table"
+  ],
+  "system": [
+    [
+      "test:node --version",
+      "brew:node",
+      "linux:nodejs"
+    ]
+  ],
+  "profiles": [
+    {
+      "name": "main",
+      "commands": [
+        {
+          "name": "render",
+          "execute": [
+            "profile:render"
+          ],
+          "help": {
+            "text": "Render JSON from stdin as a human-readable list or table."
+          }
+        }
+      ]
+    },
+    {
+      "name": "render",
+      "commands": [
+        {
+          "name": "list",
+          "execute": [
+            "stdin:node ${packageDir}/lib/aux4-render.mjs list values(primary, secondary, icon, actions, format)"
+          ],
+          "help": {
+            "text": "Render a JSON array from stdin as a MUI-List-style view (icon, primary, secondary, actions).",
+            "variables": [
+              {
+                "name": "primary",
+                "text": "Primary line template. A bare field name (e.g. name) or a string with $field tokens (e.g. \"$firstName $lastName\").",
+                "arg": true
+              },
+              {
+                "name": "secondary",
+                "text": "Secondary line template. Bare field name or $field interpolation.",
+                "default": ""
+              },
+              {
+                "name": "icon",
+                "text": "Icon template rendered before the primary line. Bare field name or $field interpolation.",
+                "default": ""
+              },
+              {
+                "name": "actions",
+                "text": "Actions template, rendered right-aligned on the primary line (plain text, not interactive).",
+                "default": ""
+              },
+              {
+                "name": "format",
+                "text": "Output format. 'list' renders the view; 'json' passes the original stdin JSON through untouched.",
+                "default": "list",
+                "options": [
+                  "list",
+                  "json"
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "table",
+          "execute": [
+            "stdin:node ${packageDir}/lib/aux4-render.mjs table values(table, format, lineNumbers, showInvalidLines)"
+          ],
+          "help": {
+            "text": "Render a JSON array from stdin as a table, delegating to aux4 2table.",
+            "variables": [
+              {
+                "name": "table",
+                "text": "The table structure to output (column list), forwarded to aux4 2table.",
+                "default": "",
+                "arg": true
+              },
+              {
+                "name": "format",
+                "text": "Output format. 'ascii'/'md' forward to aux4 2table; 'json' passes the original stdin JSON through untouched.",
+                "default": "ascii",
+                "options": [
+                  "ascii",
+                  "md",
+                  "json"
+                ]
+              },
+              {
+                "name": "lineNumbers",
+                "text": "Add a first column with line numbers starting from 1 (forwarded to aux4 2table).",
+                "default": "false"
+              },
+              {
+                "name": "showInvalidLines",
+                "text": "Show invalid lines as <invalid line> instead of skipping them (forwarded to aux4 2table).",
+                "default": "false"
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

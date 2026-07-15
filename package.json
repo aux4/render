@@ -1,0 +1,20 @@
+{
+  "name": "@aux4/render",
+  "version": "0.0.1",
+  "description": "Render a JSON array from stdin as a human-readable list or table",
+  "type": "module",
+  "preferGlobal": true,
+  "scripts": {
+    "build": "node --check package/lib/aux4-render.mjs && echo 'aux4/render is a zero-dependency script; nothing to bundle.'"
+  },
+  "keywords": [
+    "aux4",
+    "cli",
+    "json",
+    "render",
+    "list",
+    "table"
+  ],
+  "author": "aux4 LLC",
+  "license": "Apache-2.0"
+}
