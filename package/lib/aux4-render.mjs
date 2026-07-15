@@ -68,9 +68,125 @@ function hasField(obj, path) {
   return true;
 }
 
-// Apply the field interpolation rule to a single template value.
+// --- value-map + named-transform resolution ------------------------------
+//
+// On top of the bare-field / literal / $-interpolation rules (see resolve),
+// --icon/--primary/--secondary/--badge also accept two per-field forms:
+//
+//   1) Value-map:  field[VALUE:label,VALUE2:label2,...]
+//        Look up the record's `field`, map ITS value through the bracketed
+//        table. An unmapped value falls back to the raw field value unchanged
+//        (never blank, never error). The bracket grammar reuses the exact same
+//        comma/colon parser built for `render kv` (splitKvItems/parseKvItem).
+//
+//   2) Named transform:  field:transformName
+//        Apply a built-in transform to the record's `field` value. Supported:
+//        case, date, time, datetime, number (see applyTransform). A value that
+//        cannot be parsed for the requested transform falls back to the raw
+//        field value unchanged (same "always show something" philosophy).
+//
+// Disambiguation is unambiguous: a value-map ALWAYS has brackets (`field[...]`);
+// a named transform NEVER has brackets, just one bare colon before a KNOWN
+// transform name. Anything else falls through to the existing rules, so plain
+// fields, literals (including ones that happen to contain a colon), and
+// $-interpolation keep working exactly as before.
+
+const FIELD_TOKEN = "[A-Za-z_][A-Za-z0-9_.]*";
+const VALUE_MAP_RE = new RegExp(`^(${FIELD_TOKEN})\\[(.*)\\]$`);
+const TRANSFORM_RE = new RegExp(`^(${FIELD_TOKEN}):(case|date|time|datetime|number)$`);
+
+// Build a value-map lookup from the bracket contents, reusing the kv grammar so
+// `field[A:x,B:y]` parses identically to `render kv`'s `field[A:x,B:y]` renames.
+function resolveValueMap(field, content, record) {
+  const rawValue = stringify(getField(record, field));
+  let items;
+  try {
+    items = splitKvItems(content);
+  } catch {
+    // Malformed map contents: fall back to the raw field value unchanged.
+    return rawValue;
+  }
+  const map = new Map();
+  for (const item of items) {
+    map.set(item.field, item.label != null ? item.label : item.field);
+  }
+  return map.has(rawValue) ? map.get(rawValue) : rawValue;
+}
+
+// snake_case / SCREAMING_SNAKE_CASE (and space-separated) -> Title Case words.
+function toTitleCase(str) {
+  return str
+    .split(/[_\s]+/)
+    .filter(word => word.length > 0)
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+    .join(" ");
+}
+
+// Parse a value into a Date. A number (or all-digit string) is treated as epoch
+// millis; anything else is handed to the Date constructor (assumed ISO 8601 with
+// a Z suffix or explicit offset). Returns null when the result is not a valid
+// date, so callers can fall back to the raw value.
+function parseTimestamp(value) {
+  let date;
+  if (typeof value === "number") {
+    date = new Date(value);
+  } else {
+    const str = String(value).trim();
+    if (str === "") return null;
+    date = /^-?\d+$/.test(str) ? new Date(Number(str)) : new Date(str);
+  }
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+// Apply a named transform to a raw field value. Timezone-sensitive transforms
+// (date/time/datetime) convert from the timestamp's absolute instant to the Node
+// runtime's default timezone via toLocale* with an undefined locale — the local
+// machine's timezone/locale, never a hardcoded one. Any value that cannot be
+// parsed for the transform is returned as its raw string unchanged.
+function applyTransform(rawValue, name) {
+  const str = stringify(rawValue);
+  if (name === "case") {
+    return str === "" ? "" : toTitleCase(str);
+  }
+  if (name === "number") {
+    const n = typeof rawValue === "number" ? rawValue : Number(str);
+    if (str.trim() === "" || Number.isNaN(n)) return str;
+    return n.toLocaleString();
+  }
+  const date = parseTimestamp(rawValue);
+  if (date === null) return str;
+  if (name === "date") {
+    return date.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+  }
+  if (name === "time") {
+    return date.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+  }
+  // datetime
+  return date.toLocaleString(undefined, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit"
+  });
+}
+
+// Apply the field resolution rules to a single template value. Order matters:
+// value-map (brackets) first, then named transform (bare colon + known name),
+// then the original bare-field / literal / $-interpolation behavior.
 function resolve(template, record) {
   if (template === undefined || template === null || template === "") return "";
+
+  const mapMatch = template.match(VALUE_MAP_RE);
+  if (mapMatch) {
+    return resolveValueMap(mapMatch[1], mapMatch[2], record);
+  }
+
+  const transformMatch = template.match(TRANSFORM_RE);
+  if (transformMatch) {
+    return applyTransform(getField(record, transformMatch[1]), transformMatch[2]);
+  }
+
   if (template.indexOf("$") === -1) {
     const path = template.trim();
     // Bare value: use the field's value when the record has that key; otherwise

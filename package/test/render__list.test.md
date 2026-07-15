@@ -245,3 +245,178 @@ exit=2
 ```error:partial
 No --primary template provided. Use --primary <field-or-template>.
 ```
+
+## value-map
+
+A `field[VALUE:label,...]` template looks up the record's field and maps its value through the bracketed table; an unmapped value falls back to the raw field value unchanged.
+
+### should map a status value to an icon label
+
+```execute
+echo '[{"title":"Ship it","status":"IN_PROGRESS"}]' | aux4 render list --primary title --icon 'status[TODO:📋,IN_PROGRESS:🔧,DONE:✅]'
+```
+
+```expect
+🔧 Ship it
+```
+
+### should fall back to the raw field value for an unmapped icon
+
+```execute
+echo '[{"title":"Investigate","status":"BLOCKED"}]' | aux4 render list --primary title --icon 'status[TODO:📋,IN_PROGRESS:🔧,DONE:✅]'
+```
+
+```expect
+BLOCKED Investigate
+```
+
+### should map a status value to a secondary label
+
+```execute
+echo '[{"title":"Ship it","status":"IN_PROGRESS"}]' | aux4 render list --primary title --secondary 'status[TODO:To Do,IN_PROGRESS:In Progress,DONE:Done]'
+```
+
+```expect
+Ship it
+In Progress
+```
+
+### should map a status value to a right-aligned badge label
+
+The badge label `Done` (4 columns) is right-aligned to width 80, leaving 69 spaces after the 7-column primary `Ship it`.
+
+```execute
+echo '[{"title":"Ship it","status":"DONE"}]' | aux4 render list --primary title --badge 'status[TODO:To Do,IN_PROGRESS:In Progress,DONE:Done]'
+```
+
+```expect:regex
+^Ship it {69}Done$
+```
+
+## named transforms
+
+A `field:transformName` template applies a built-in transform to the record's field value. Date/time transforms are pinned to a fixed timezone and locale here (`TZ=America/New_York LC_ALL=en_US.UTF-8`) so the expected output is deterministic regardless of the host machine's defaults. The instant `2026-07-15T02:30:00Z` falls on the previous calendar day in New York, which is what makes the UTC→local conversion visible.
+
+### should title-case a SCREAMING_SNAKE_CASE value
+
+```execute
+echo '[{"title":"T","status":"IN_PROGRESS"}]' | aux4 render list --primary title --secondary status:case
+```
+
+```expect
+T
+In Progress
+```
+
+### should title-case a snake_case value
+
+```execute
+echo '[{"title":"T","status":"in_progress"}]' | aux4 render list --primary title --secondary status:case
+```
+
+```expect
+T
+In Progress
+```
+
+### should render a date in the local timezone
+
+```execute
+echo '[{"title":"T","createdAt":"2026-07-15T02:30:00Z"}]' | TZ=America/New_York LC_ALL=en_US.UTF-8 aux4 render list --primary title --secondary createdAt:date
+```
+
+```expect
+T
+Jul 14, 2026
+```
+
+### should render a time in the local timezone
+
+```execute
+echo '[{"title":"T","createdAt":"2026-07-15T02:30:00Z"}]' | TZ=America/New_York LC_ALL=en_US.UTF-8 aux4 render list --primary title --secondary createdAt:time
+```
+
+```expect
+T
+10:30 PM
+```
+
+### should render a datetime in the local timezone
+
+```execute
+echo '[{"title":"T","createdAt":"2026-07-15T02:30:00Z"}]' | TZ=America/New_York LC_ALL=en_US.UTF-8 aux4 render list --primary title --secondary createdAt:datetime
+```
+
+```expect
+T
+Jul 14, 2026, 10:30 PM
+```
+
+### should format a number with locale thousands separators
+
+```execute
+echo '[{"title":"T","count":12000}]' | LC_ALL=en_US.UTF-8 aux4 render list --primary title --secondary count:number
+```
+
+```expect
+T
+12,000
+```
+
+### should fall back to the raw value when a date cannot be parsed
+
+```execute
+echo '[{"title":"T","createdAt":"not-a-date"}]' | aux4 render list --primary title --secondary createdAt:date
+```
+
+```expect
+T
+not-a-date
+```
+
+### should fall back to the raw value when a number cannot be parsed
+
+```execute
+echo '[{"title":"T","count":"N/A"}]' | aux4 render list --primary title --secondary count:number
+```
+
+```expect
+T
+N/A
+```
+
+## resolution regressions
+
+### should treat a literal containing a colon as a literal, not a transform
+
+`Status: unknown` has no brackets and no known transform name after its colon, so it falls through to the literal rule unchanged.
+
+```execute
+echo '[{"title":"T"}]' | aux4 render list --primary title --secondary 'Status: unknown'
+```
+
+```expect
+T
+Status: unknown
+```
+
+### should keep $-interpolation working alongside a value-map icon
+
+```execute
+echo '[{"first":"Ada","last":"Lovelace","status":"DONE"}]' | aux4 render list --primary '$first $last' --icon 'status[DONE:✅]'
+```
+
+```expect
+✅ Ada Lovelace
+```
+
+### should keep the plain bare-field rule working with the new resolver
+
+```execute
+echo '[{"name":"Alice","date":"2026-01-01"}]' | aux4 render list --primary name --secondary date
+```
+
+```expect
+Alice
+2026-01-01
+```
