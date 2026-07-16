@@ -2,7 +2,7 @@
 
 Render a JSON array from standard input as a human-readable view. Pipe the raw JSON output of any aux4 command through `aux4 render` to get a tidy list or table in the terminal.
 
-`aux4/render` provides four commands:
+`aux4/render` provides five commands:
 
 - `aux4 render list` — an MUI-List-style view (icon, primary, secondary, and a right-aligned badge label).
 - `aux4 render table` — a table view that delegates to [`aux4/2table`](https://github.com/aux4/2table).
@@ -53,6 +53,41 @@ cat people.json | aux4 render table firstName,lastName,role
  Linus      Torvalds  Maintainer
 ```
 
+## Using it as a command's `render`
+
+The main reason `aux4/render` exists is to be the [`render`](https://docs.aux4.io/render) of another `.aux4` command. A command captures raw JSON into its response (with a `json:` executor), and its `render` field pipes that response through `aux4 render` **only when the output goes to a terminal** — a piped or redirected run still gets the raw JSON untouched, so scripts keep structured data.
+
+```json
+{
+  "profiles": [
+    {
+      "name": "main",
+      "commands": [
+        {
+          "name": "servers",
+          "execute": [
+            "json:curl -s https://api.example.com/servers"
+          ],
+          "render": {
+            "tty": "aux4 render list --primary name --icon 'status[ONLINE:🟢,OFFLINE:🔴]' --secondary region --badge status",
+            "table": "aux4 render table name,region,status"
+          },
+          "help": {
+            "text": "list the servers"
+          }
+        }
+      ]
+    }
+  ]
+}
+```
+
+- `aux4 servers` in a terminal renders the list — the `tty` entry runs automatically.
+- `aux4 servers --render table` selects the `table` format explicitly.
+- `aux4 servers | jq .` (piped, not a TTY) skips rendering and emits the raw JSON.
+
+The execute step must **capture** its output into the response — use a `json:` or `nout:` executor. (On aux4 `5.1.31`+ a bare shell command works too: the core auto-silences the execute step whenever a `render` field is present, so the raw output isn't printed alongside the rendered view.) See the [Render documentation](https://docs.aux4.io/render) for the full mechanics of the `render` field, `--render <name>` selection, and TTY auto-detection.
+
 ## Field interpolation
 
 Every `render list` template flag (`--icon`, `--primary`, `--secondary`, `--badge`) is resolved against the current record. The forms below are tried in order — a value-map (brackets) first, then a named transform (bare colon), then the base bare-field / literal / `$`-interpolation rules:
@@ -75,7 +110,7 @@ The tokens are deliberately bare `$field`, **not** `${...}`. This keeps them cle
 
 ## Input handling
 
-Both commands read JSON from standard input and handle these cases consistently:
+All render commands read JSON from standard input and handle these cases consistently:
 
 - **JSON array** — rendered as usual, one row per element.
 - **A single JSON object** (not wrapped in an array) — treated as a one-item array and rendered normally.
