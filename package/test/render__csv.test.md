@@ -42,6 +42,29 @@ Alice,30
 "Bob, Jr.",25
 ```
 
+## value format pass-through
+
+The `{format:...}` column modifier is forwarded verbatim to `aux4 2table --format csv`, which owns the actual formatting. Pinned to `locale:en-US` under `TZ=UTC` for determinism. Requires a current `aux4/2table` that supports `{format:...}`.
+
+### should forward a currency format modifier to aux4 2table and quote the formatted value
+
+The formatted value `$1,234.50` contains a comma, so 2table's RFC 4180 CSV renderer quotes it.
+
+```file:prices.json
+[
+  { "name": "Widget", "price": 1234.5 }
+]
+```
+
+```execute
+cat prices.json | TZ=UTC aux4 render csv 'name,price{format:currency,currency:USD,locale:en-US}'
+```
+
+```expect
+name,price
+Widget,"$1,234.50"
+```
+
 ## empty array
 
 ### should print nothing and exit 0 for an empty array

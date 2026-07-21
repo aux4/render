@@ -42,6 +42,31 @@ cat invalid.json | aux4 render table name,age --lineNumbers true --showInvalidLi
  3  Charlie          35
 ```
 
+## value format pass-through
+
+The `{format:...}` column modifier is forwarded verbatim to `aux4 2table`, which
+owns the actual formatting. Pinned to `locale:en-US` under `TZ=UTC` for
+determinism. Requires a current `aux4/2table` that supports `{format:...}`.
+
+### should forward a currency format modifier to aux4 2table
+
+```file:prices.json
+[
+  { "name": "Widget", "price": 1234.5 },
+  { "name": "Gadget", "price": 9.5 }
+]
+```
+
+```execute
+cat prices.json | TZ=UTC aux4 render table 'name,price{format:currency,currency:USD,locale:en-US}'
+```
+
+```expect
+ name        price
+ Widget  $1,234.50
+ Gadget      $9.50
+```
+
 ## empty array
 
 ### should print nothing and exit 0 for an empty array

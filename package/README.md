@@ -34,11 +34,11 @@ cat people.json | aux4 render list --primary '$firstName $lastName' --secondary 
 ```
 
 ```text
-Ada Lovelace                                                              active
-Engineer
+ Ada Lovelace                                                             active
+ Engineer
 
-Linus Torvalds                                                              away
-Maintainer
+ Linus Torvalds                                                             away
+ Maintainer
 ```
 
 Or as a table:
@@ -93,20 +93,61 @@ The execute step must **capture** its output into the response — use a `json:`
 Every `render list` template flag (`--icon`, `--primary`, `--secondary`, `--badge`) is resolved against the current record. The forms below are tried in order — a value-map (brackets) first, then a named transform (bare colon), then the base bare-field / literal / `$`-interpolation rules:
 
 - **Value-map — `field[VALUE:label,VALUE2:label2,...]`** — look up the record's `field`, then map **its value** through the bracketed table. `--icon 'status[TODO:📋,IN_PROGRESS:🔧,DONE:✅]'` shows a per-status emoji; `--secondary 'status[TODO:To Do,IN_PROGRESS:In Progress,DONE:Done]'` shows a friendly label. When the record's value is **not** a key in the map, the raw field value is shown unchanged (never blank, never an error). The bracket grammar is the same comma/colon grammar used by `render kv` (`VALUE:label` pairs, optionally quoted labels).
-- **Named transform — `field:transformName`** — apply a built-in transform to the record's `field` value:
-  - `case` — snake_case / SCREAMING_SNAKE_CASE → Title Case with spaces (`IN_PROGRESS` → `In Progress`).
-  - `date` — parse the value as a timestamp and render the **date**, converted from UTC to the **local machine's timezone** (`Jul 15, 2026`).
-  - `time` — same conversion, render the **time** (`10:30 AM`).
-  - `datetime` — same conversion, render **date + time** (`Jul 15, 2026, 10:30 AM`).
-  - `number` — locale thousands-separator formatting (`12000` → `12,000`).
+- **Value-format — `field{format:TYPE,option:value,...}`** — render the record's `field` value through the shared value formatter (see [Value formatting](#value-formatting) below). `--badge 'price{format:currency,currency:USD}'` shows `$1,234.50`; `--secondary 'createdAt{format:datetime}'` shows a localized date+time. Empty or un-parseable values fall back to the raw value (never `NaN`/`Invalid Date`).
 
-  Timestamps are assumed to be ISO 8601 with a `Z` suffix or explicit offset, or epoch millis; the date/time transforms use the Node runtime's default timezone and locale (never a hardcoded one). If a value can't be parsed for the requested transform, the raw field value is shown unchanged.
+  > **Breaking change (`render list`):** the old `field:transform` colon syntax (`field:number`, `field:date`, `field:case`, …) has been **removed**. A bare colon is no longer a transform — use `field{format:...}` instead. There is no replacement for the old `case` transform.
 - **No `$` in the value** — if the record has a field with that name, the field's value is used (2table-style). `--secondary date` renders `record.date`. Dot notation works for nested fields: `--secondary address.city`. If the record has **no** such field, the whole string is used as a literal constant on every row, so `--icon 😀` prints `😀` on each row and `--badge done` prints `done` on each row.
 - **One or more `$field` tokens** — each `$field` is replaced with that record field (empty string when missing) and the rest of the string is kept literal. `--primary '$firstName $lastName'` renders the two fields joined by a space.
 
 The tokens are deliberately bare `$field`, **not** `${...}`. This keeps them clear of aux4's own execute-line `${...}` substitution. Single-quote the flag in your shell (`--primary '$firstName $lastName'`) so the shell itself does not expand `$field` before aux4 sees it.
 
-**Note:** field lookup takes precedence over the literal fallback. `--icon emoji` uses the `emoji` field when the record has one; only when no `emoji` field exists is the string rendered literally. A value-map always has brackets and a named transform always has a bare colon before a known transform name, so a plain literal (even one containing a colon) is never mistaken for either.
+**Note:** field lookup takes precedence over the literal fallback. `--icon emoji` uses the `emoji` field when the record has one; only when no `emoji` field exists is the string rendered literally. A value-map always has brackets and a value-format always has braces (`{format:...}`), so a plain literal (even one containing a colon) is never mistaken for either.
+
+## Value formatting
+
+Every render command supports a per-field `{format:...}` modifier that renders a raw value as a formatted display string. The formatter is **vendored from [`aux4/2table`](https://github.com/aux4/2table)** (`lib/ValueFormatter.js`) so `render` and `2table` format values identically; for `render table` / `render csv` the modifier is forwarded straight through to `aux4 2table`, which does the formatting.
+
+Grammar: `field{format:TYPE,option:value,option:value}`. Options may be separated by `,` or `;`. Commas inside the braces stay grouped, so a multi-option modifier is never split apart from the rest of the structure.
+
+Format types:
+
+| Type | Renders | Example (`locale:en-US`) |
+|------|---------|--------------------------|
+| `number` | Grouped number | `1234567.89` → `1,234,567.89` |
+| `currency` | Currency (ISO code, default `USD`) | `1234.5` → `$1,234.50` |
+| `percent` | Percentage (value treated as a **ratio**) | `0.1234` + `decimals:2` → `12.34%` |
+| `date` | Localized date | `1990-05-01` → `May 1, 1990` |
+| `time` | Localized time | `2026-07-15T02:30:00Z` → `2:30:00 AM` (UTC) |
+| `datetime` | Localized date + time | `2026-07-15T02:30:00Z` → `Jul 15, 2026, 2:30 AM` (UTC) |
+
+Option keys:
+
+- `decimals` — fixed fraction digits (`number`, `currency`, `percent`).
+- `currency` — ISO currency code for `currency` (default `USD`).
+- `locale` — BCP 47 locale (e.g. `en-US`). Defaults to the host locale.
+- `style` — unified temporal style: `short | medium | long | full`. Sets the date style for `date`, the time style for `time`, and **both** for `datetime`.
+- `dateStyle` / `timeStyle` — per-part overrides. Precedence per part: explicit part style > `style` > built-in default (`date` medium, `time` medium, `datetime` = date medium + time short).
+
+Empty values render as an empty string; values that cannot be parsed for the requested type fall back to the raw value unchanged — never `NaN` or `Invalid Date`.
+
+Per-command usage:
+
+- **`render kv`** — `field{format:...}` in the structure formats the emitted value: `aux4 render kv 'name,price{format:currency,currency:USD}'` → `price=$1,234.50`.
+- **`render yaml`** — a formatted leaf becomes a display **string** (formatting intentionally turns a typed value into a string); unformatted fields keep their original type and nesting.
+- **`render list`** — any template flag accepts `field{format:...}`: `aux4 render list --primary name --badge 'price{format:currency}'`.
+- **`render table` / `render csv`** — the modifier is passed through verbatim to `aux4 2table`, so `aux4 render table 'name,price{format:currency,currency:USD}'` renders a formatted column. Requires a current `aux4/2table` that supports `{format:...}`.
+
+```bash
+echo '[{"name":"Widget","price":1234.5,"rate":0.2,"ts":"2026-07-15T02:30:00Z"}]' \
+  | aux4 render kv 'name,price{format:currency,currency:USD,locale:en-US},rate{format:percent,decimals:0,locale:en-US},ts{format:datetime,style:short,locale:en-US}'
+```
+
+```text
+name=Widget
+price=$1,234.50
+rate=20%
+ts=7/15/26, 2:30 AM
+```
 
 ## Input handling
 
@@ -146,11 +187,11 @@ cat people.json | aux4 render list --primary '$firstName $lastName' --secondary 
 ```
 
 ```text
-Ada Lovelace                                                              active
-Engineer
+ Ada Lovelace                                                             active
+ Engineer
 
-Linus Torvalds                                                              away
-Maintainer
+ Linus Torvalds                                                             away
+ Maintainer
 ```
 
 Per-row icon from a field:
@@ -173,12 +214,12 @@ echo '[{"title":"Ship release","status":"IN_PROGRESS","createdAt":"2026-07-15T14
       --primary title \
       --icon 'status[TODO:📋,IN_PROGRESS:🔧,DONE:✅]' \
       --secondary 'status[TODO:To Do,IN_PROGRESS:In Progress,DONE:Done]' \
-      --badge createdAt:datetime
+      --badge 'createdAt{format:datetime,locale:en-US}'
 ```
 
 ```text
-🔧 Ship release                                           Jul 15, 2026, 10:30 AM
-   In Progress
+ 🔧 Ship release                                          Jul 15, 2026, 10:30 AM
+    In Progress
 ```
 
 An unmapped value falls back to the raw field value (`BLOCKED` has no entry in the map):
@@ -189,19 +230,18 @@ echo '[{"title":"Investigate outage","status":"BLOCKED"}]' \
 ```
 
 ```text
-BLOCKED Investigate outage
+ BLOCKED Investigate outage
 ```
 
-Named transforms — Title-case a status, format a count:
+Value formatting — format a count as currency (see [Value formatting](#value-formatting)):
 
 ```bash
-echo '[{"name":"Widgets","state":"in_progress","count":12000}]' \
-  | aux4 render list --primary name --secondary state:case --badge count:number
+echo '[{"name":"Widgets","total":12000}]' \
+  | aux4 render list --primary name --badge 'total{format:currency,currency:USD,locale:en-US}'
 ```
 
 ```text
-Widgets                                                                   12,000
-In Progress
+ Widgets                                                              $12,000.00
 ```
 
 ### aux4 render kv

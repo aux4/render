@@ -8,8 +8,9 @@ Field selection uses the same grammar as `render kv` / `render table` / `render 
 - **Nested groups** — `address[street,city]` produces a nested `address:` mapping with `street` and `city` under it (**not** flat `address.street` / `address.city` keys, as `kv` would emit).
 - **Renaming** — `field:"Label"` (or `field:Label` without quotes) overrides the emitted key name. `address[street,city:"City"]` emits a `City:` key inside the nested `address` mapping.
 - **Array of objects** — when a selected `field[...]` group is applied to an array, each element is projected through the group, producing a YAML sequence of nested mappings.
+- **Value formatting — `field{format:TYPE,option:value,...}`** — render the selected field's value through the shared value formatter (vendored from `aux4/2table`). Types: `number`, `currency`, `percent`, `date`, `time`, `datetime`. Option keys: `decimals`, `currency` (ISO code, default `USD`), `locale`, and the unified temporal `style` (`short|medium|long|full`) plus `dateStyle`/`timeStyle` overrides. A formatted leaf becomes a display **string** (formatting intentionally turns a typed value into a string); fields without a modifier keep their original typed value and nesting. Empty/un-parseable values fall back to the raw value (never `NaN`/`Invalid Date`).
 
-Column-width modifiers such as `{width:20}` are accepted but silently ignored, so a structure you also use with `table`, `csv`, or `kv` can be pasted unchanged.
+Column-width modifiers such as `{width:20}` (a brace modifier without a `format:` key) are accepted but silently ignored, so a structure you also use with `table`, `csv`, or `kv` can be pasted unchanged.
 
 If the structure argument is **omitted**, the full original record is dumped as-is with no filtering. There is no flattening step — YAML already represents nested structure natively.
 
@@ -25,7 +26,7 @@ Input handling: a single JSON object is treated as a one-item array; an empty ar
 cat data.json | aux4 render yaml [<structure>] [--index <N>]
 ```
 
-structure  Optional. Comma-separated field structure (`field`, `field[sub1,sub2]`, `field:"Label"`) — the selection stays nested in the YAML output. Omit to dump the full record.
+structure  Optional. Comma-separated field structure (`field`, `field[sub1,sub2]`, `field:"Label"`, `field{format:TYPE,...}`) — the selection stays nested in the YAML output. Omit to dump the full record.
 --index    Optional. 0-based index selecting a single record from the top-level array, rendered as a single YAML mapping. Out of range exits 1.
 
 #### Example
@@ -84,4 +85,16 @@ echo '[{"name":"Alice"},{"name":"Bob"}]' | aux4 render yaml --index 1
 
 ```text
 name: Bob
+```
+
+Format a leaf with `field{format:...}` (the formatted value becomes a string; other fields keep their types):
+
+```bash
+echo '[{"name":"Widget","price":1234.5,"qty":3}]' | aux4 render yaml 'name,price{format:currency,currency:USD,locale:en-US},qty'
+```
+
+```text
+name: Widget
+price: $1,234.50
+qty: 3
 ```

@@ -51,23 +51,23 @@
             "variables": [
               {
                 "name": "primary",
-                "text": "Primary line template. A bare field name (e.g. name) or a string with $field tokens (e.g. \"$firstName $lastName\").",
+                "text": "Primary line template. A bare field name (e.g. name), a string with $field tokens (e.g. \"$firstName $lastName\"), a value-map field[VALUE:label,...], or value formatting field{format:TYPE,...} (number|currency|percent|date|time|datetime). Note: field:transform colon syntax is no longer supported — use field{format:...}.",
                 "arg": true,
                 "default": ""
               },
               {
                 "name": "secondary",
-                "text": "Secondary line template. Bare field name or $field interpolation.",
+                "text": "Secondary line template. Bare field name, $field interpolation, value-map field[VALUE:label,...], or value formatting field{format:TYPE,...}.",
                 "default": ""
               },
               {
                 "name": "icon",
-                "text": "Icon template rendered before the primary line. Bare field name or $field interpolation.",
+                "text": "Icon template rendered before the primary line. Bare field name, $field interpolation, value-map field[VALUE:label,...], or value formatting field{format:TYPE,...}.",
                 "default": ""
               },
               {
                 "name": "badge",
-                "text": "Badge template, rendered right-aligned on the primary line (plain text, not interactive).",
+                "text": "Badge template, rendered right-aligned on the primary line (plain text, not interactive). Bare field name, $field interpolation, value-map field[VALUE:label,...], or value formatting field{format:TYPE,...}.",
                 "default": ""
               }
             ]
@@ -83,7 +83,7 @@
             "variables": [
               {
                 "name": "structure",
-                "text": "Optional field structure (same grammar as render table/csv): comma-separated fields, field[sub1,sub2] nesting, field:\"Label\" rename. Omit to auto-flatten every field into dotted keys.",
+                "text": "Optional field structure (same grammar as render table/csv): comma-separated fields, field[sub1,sub2] nesting, field:\"Label\" rename, and field{format:TYPE,...} value formatting (number|currency|percent|date|time|datetime; options decimals, currency, locale, style). Omit to auto-flatten every field into dotted keys.",
                 "arg": true,
                 "default": ""
               },
@@ -105,7 +105,7 @@
             "variables": [
               {
                 "name": "structure",
-                "text": "Optional field structure (same grammar as render kv/table/csv): comma-separated fields, field[sub1,sub2] nesting, field:\"Label\" rename. Unlike kv the selection stays nested in the YAML output instead of flattening to dotted keys. Omit to dump the full record.",
+                "text": "Optional field structure (same grammar as render kv/table/csv): comma-separated fields, field[sub1,sub2] nesting, field:\"Label\" rename, and field{format:TYPE,...} value formatting (number|currency|percent|date|time|datetime; options decimals, currency, locale, style). Unlike kv the selection stays nested in the YAML output instead of flattening to dotted keys. Omit to dump the full record.",
                 "arg": true,
                 "default": ""
               },
@@ -127,7 +127,7 @@
             "variables": [
               {
                 "name": "table",
-                "text": "The table structure to output (column list), forwarded to aux4 2table.",
+                "text": "The table structure to output (column list), forwarded verbatim to aux4 2table. Supports the full 2table grammar including field{format:TYPE,...} value formatting (number|currency|percent|date|time|datetime), which is applied by 2table.",
                 "default": "",
                 "arg": true
               },
@@ -154,7 +154,7 @@
             "variables": [
               {
                 "name": "table",
-                "text": "The table structure to output (column list), forwarded to aux4 2table.",
+                "text": "The table structure to output (column list), forwarded verbatim to aux4 2table. Supports the full 2table grammar including field{format:TYPE,...} value formatting (number|currency|percent|date|time|datetime), which is applied by 2table.",
                 "default": "",
                 "arg": true
               },

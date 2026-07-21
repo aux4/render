@@ -293,6 +293,87 @@ exit=1
 --index -1 is out of range: 1 record(s) available.
 ```
 
+## value format
+
+A `field{format:...}` modifier renders the field's value through the shared
+formatter (vendored from aux4/2table). Tests pin `locale:en-US` and run under
+`TZ=UTC` so the output is deterministic regardless of the host machine.
+
+### should format a currency value
+
+```execute
+echo '[{"name":"Widget","price":1234.5}]' | TZ=UTC aux4 render kv 'name,price{format:currency,currency:USD,locale:en-US}'
+```
+
+```expect
+name=Widget
+price=$1,234.50
+```
+
+### should format a number with decimals:0 rounding and grouping
+
+```execute
+echo '[{"n":1234567.89}]' | TZ=UTC aux4 render kv 'n{format:number,decimals:0,locale:en-US}'
+```
+
+```expect
+n=1,234,568
+```
+
+### should treat a percent value as a ratio
+
+```execute
+echo '[{"rate":0.1234}]' | TZ=UTC aux4 render kv 'rate{format:percent,decimals:1,locale:en-US}'
+```
+
+```expect
+rate=12.3%
+```
+
+### should render a short date via the style key
+
+```execute
+echo '[{"born":"1990-05-01"}]' | TZ=UTC aux4 render kv 'born{format:date,style:short,locale:en-US}'
+```
+
+```expect
+born=5/1/90
+```
+
+### should keep a comma inside the format modifier grouped (no field split)
+
+```execute
+echo '[{"amount":9.5,"tax":0.08}]' | TZ=UTC aux4 render kv 'amount{format:currency,currency:USD,locale:en-US},tax{format:percent,decimals:0,locale:en-US}'
+```
+
+```expect
+amount=$9.50
+tax=8%
+```
+
+### should fall back to an empty string for a null value and the raw value for an un-parseable one
+
+```execute
+echo '[{"price":null,"bad":"N/A"}]' | TZ=UTC aux4 render kv 'price{format:currency,locale:en-US},bad{format:number,locale:en-US}'
+```
+
+```expect
+price=
+bad=N/A
+```
+
+### should accept a non-format modifier and ignore it (arrays still flatten)
+
+```execute
+echo '[{"name":"A","tags":["x","y"]}]' | aux4 render kv 'name,tags{width:20}'
+```
+
+```expect
+name=A
+tags.0=x
+tags.1=y
+```
+
 ## empty array
 
 ### should print nothing and exit 0 for an empty array

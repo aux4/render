@@ -3060,6 +3060,263 @@ const {
   safeDump
 } = yaml;
 
+/**
+ * VENDORED from aux4/2table (packages/2table/lib/ValueFormatter.js).
+ * Keep this file in sync with the 2table original — it powers the `{format:...}`
+ * modifier for `render kv`, `render yaml`, and `render list`, and `render table` /
+ * `render csv` pass the same modifier through to 2table itself. If you change the
+ * formatter contract in 2table, copy it here (and vice versa).
+ *
+ * Value formatting strategies (Strategy + Factory pattern).
+ *
+ * A column can declare a `{format:...}` modifier that renders its raw values as
+ * numbers, currency, percentages, dates, times or datetimes. Each format type is
+ * a self-contained strategy class exposing:
+ *
+ *   - format(value)        -> the display value (string), or the original value on
+ *                             empty/un-parseable input (never "NaN"/"Invalid Date")
+ *   - rightAligned(value)  -> whether the column should auto right-align
+ *
+ * There is NO switch/if dispatch on the format type: `ValueFormatterFactory` maps
+ * the type string to a strategy via a lookup registry. When no `format` key is
+ * present the factory returns `IdentityFormatter`, which leaves values untouched
+ * so all existing behavior is preserved.
+ */
+
+const FALLBACK_LOCALE = "en-US";
+
+const HOST_LOCALE = (() => {
+  try {
+    const resolved = Intl.DateTimeFormat().resolvedOptions().locale;
+    return resolved || FALLBACK_LOCALE;
+  } catch (e) {
+    return FALLBACK_LOCALE;
+  }
+})();
+
+function isEmpty(value) {
+  return value === null || value === undefined || value === "";
+}
+
+/**
+ * Coerce a value that may be a JS number or a numeric string into a number.
+ * Returns NaN for anything that is not a clean numeric value.
+ */
+function toNumber(value) {
+  if (typeof value === "number") {
+    return value;
+  }
+  if (typeof value === "string" && value.trim() !== "" && !Number.isNaN(Number(value))) {
+    return Number(value);
+  }
+  return NaN;
+}
+
+function resolveLocale(options) {
+  return options.locale || HOST_LOCALE || FALLBACK_LOCALE;
+}
+
+/**
+ * Normalize an option to a usable string, treating empty/blank as absent so the
+ * `??` precedence chain falls through to the next candidate. This keeps the
+ * temporal style resolution as a flat "explicit override ?? style ?? default"
+ * expression instead of nested if-chains.
+ */
+function optionValue(value) {
+  if (value === undefined || value === null || String(value).trim() === "") {
+    return undefined;
+  }
+  return value;
+}
+
+/**
+ * Resolve the effective style for a temporal part. Precedence:
+ * explicit part style (dateStyle/timeStyle) > unified `style` > built-in default.
+ */
+function resolveTemporalStyle(explicit, style, fallback) {
+  return optionValue(explicit) ?? optionValue(style) ?? fallback;
+}
+
+/**
+ * Apply fixed fraction digits when `decimals` is provided. `decimals` is expected
+ * to already be an integer (StructureParser/Structure parse it), but we coerce
+ * defensively so a stray string cannot corrupt the Intl options.
+ */
+function applyDecimals(intlOptions, options) {
+  if (options.decimals === undefined || options.decimals === null || options.decimals === "") {
+    return intlOptions;
+  }
+  const decimals = parseInt(options.decimals, 10);
+  if (Number.isNaN(decimals)) {
+    return intlOptions;
+  }
+  intlOptions.minimumFractionDigits = decimals;
+  intlOptions.maximumFractionDigits = decimals;
+  return intlOptions;
+}
+
+/**
+ * Default strategy: returns the value unchanged. Preserves the historical
+ * behavior where plain JS numbers auto right-align and everything else is left
+ * as-is for the downstream cell formatter.
+ */
+class IdentityFormatter {
+  constructor(options = {}) {
+    this.options = options;
+  }
+
+  format(value) {
+    return value;
+  }
+
+  rightAligned(value) {
+    return typeof value === "number";
+  }
+}
+
+/**
+ * Shared base for numeric strategies. Handles empty/NaN guarding and delegates
+ * the actual rendering to `renderNumber`, so subclasses only build an Intl
+ * formatter. Numeric columns always request right alignment.
+ */
+class NumericFormatter extends IdentityFormatter {
+  format(value) {
+    if (isEmpty(value)) {
+      return "";
+    }
+    const num = toNumber(value);
+    if (Number.isNaN(num)) {
+      return value;
+    }
+    return this.renderNumber(num);
+  }
+
+  rightAligned() {
+    return true;
+  }
+
+  renderNumber(num) {
+    return String(num);
+  }
+}
+
+class NumberFormatter extends NumericFormatter {
+  constructor(options = {}) {
+    super(options);
+    const intlOptions = applyDecimals({ useGrouping: true }, options);
+    this.formatter = new Intl.NumberFormat(resolveLocale(options), intlOptions);
+  }
+
+  renderNumber(num) {
+    return this.formatter.format(num);
+  }
+}
+
+class CurrencyFormatter extends NumericFormatter {
+  constructor(options = {}) {
+    super(options);
+    const intlOptions = applyDecimals(
+      { style: "currency", currency: options.currency || "USD" },
+      options
+    );
+    this.formatter = new Intl.NumberFormat(resolveLocale(options), intlOptions);
+  }
+
+  renderNumber(num) {
+    return this.formatter.format(num);
+  }
+}
+
+class PercentFormatter extends NumericFormatter {
+  constructor(options = {}) {
+    super(options);
+    const intlOptions = applyDecimals({ style: "percent" }, options);
+    this.formatter = new Intl.NumberFormat(resolveLocale(options), intlOptions);
+  }
+
+  renderNumber(num) {
+    // Intl percent style multiplies by 100, so the raw value is treated as a ratio.
+    return this.formatter.format(num);
+  }
+}
+
+/**
+ * Shared base for temporal strategies. Handles empty/Invalid-Date guarding and
+ * delegates rendering to an Intl.DateTimeFormat built by the subclass. Temporal
+ * columns keep the default (left) alignment.
+ */
+class TemporalFormatter extends IdentityFormatter {
+  format(value) {
+    if (isEmpty(value)) {
+      return "";
+    }
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) {
+      return value;
+    }
+    return this.formatter.format(date);
+  }
+
+  rightAligned() {
+    return false;
+  }
+}
+
+class DateFormatter extends TemporalFormatter {
+  constructor(options = {}) {
+    super(options);
+    this.formatter = new Intl.DateTimeFormat(resolveLocale(options), {
+      dateStyle: resolveTemporalStyle(options.dateStyle, options.style, "medium")
+    });
+  }
+}
+
+class TimeFormatter extends TemporalFormatter {
+  constructor(options = {}) {
+    super(options);
+    this.formatter = new Intl.DateTimeFormat(resolveLocale(options), {
+      timeStyle: resolveTemporalStyle(options.timeStyle, options.style, "medium")
+    });
+  }
+}
+
+class DateTimeFormatter extends TemporalFormatter {
+  constructor(options = {}) {
+    super(options);
+    this.formatter = new Intl.DateTimeFormat(resolveLocale(options), {
+      dateStyle: resolveTemporalStyle(options.dateStyle, options.style, "medium"),
+      timeStyle: resolveTemporalStyle(options.timeStyle, options.style, "short")
+    });
+  }
+}
+
+/**
+ * Registry mapping a `format` type string to its strategy class. Adding a new
+ * format type means adding one entry here plus its class above — never a switch.
+ */
+const FORMATTER_REGISTRY = {
+  number: NumberFormatter,
+  currency: CurrencyFormatter,
+  percent: PercentFormatter,
+  date: DateFormatter,
+  time: TimeFormatter,
+  datetime: DateTimeFormatter
+};
+
+class ValueFormatterFactory {
+  /**
+   * Create a formatter strategy from a column's parsed format object.
+   * The object is the column's format/properties (e.g. { format: "currency",
+   * currency: "USD", decimals: 2, width: 10, align: "right" }). When no `format`
+   * key is present, an IdentityFormatter is returned so behavior is unchanged.
+   */
+  static create(format) {
+    const options = format || {};
+    const Strategy = FORMATTER_REGISTRY[options.format] || IdentityFormatter;
+    return new Strategy(options);
+  }
+}
+
 function fail(message, code) {
   console.error(message);
   process.exit(code || 1);
@@ -3104,7 +3361,7 @@ function hasField(obj, path) {
   return true;
 }
 
-// --- value-map + named-transform resolution ------------------------------
+// --- value-map + value-format resolution ----------------------------------
 //
 // On top of the bare-field / literal / $-interpolation rules (see resolve),
 // --icon/--primary/--secondary/--badge also accept two per-field forms:
@@ -3115,21 +3372,63 @@ function hasField(obj, path) {
 //        (never blank, never error). The bracket grammar reuses the exact same
 //        comma/colon parser built for `render kv` (splitKvItems/parseKvItem).
 //
-//   2) Named transform:  field:transformName
-//        Apply a built-in transform to the record's `field` value. Supported:
-//        case, date, time, datetime, number (see applyTransform). A value that
-//        cannot be parsed for the requested transform falls back to the raw
-//        field value unchanged (same "always show something" philosophy).
+//   2) Value-format:  field{format:TYPE,option:value,...}
+//        Render the record's `field` value through the shared ValueFormatter
+//        (vendored from aux4/2table). Supported types: number, currency,
+//        percent, date, time, datetime; option keys: decimals, currency
+//        (ISO code, default USD), locale, and the unified temporal `style`
+//        (short|medium|long|full) plus dateStyle/timeStyle overrides. Empty or
+//        un-parseable values fall back to the raw value (never "NaN"/"Invalid
+//        Date"). This REPLACES the old `field:transform` colon syntax — a bare
+//        colon is no longer a transform (BREAKING CHANGE): use `field{format:...}`.
 //
 // Disambiguation is unambiguous: a value-map ALWAYS has brackets (`field[...]`);
-// a named transform NEVER has brackets, just one bare colon before a KNOWN
-// transform name. Anything else falls through to the existing rules, so plain
-// fields, literals (including ones that happen to contain a colon), and
-// $-interpolation keep working exactly as before.
+// a value-format ALWAYS has braces (`field{...}`) with a `format:` key. Anything
+// else falls through to the existing rules, so plain fields, literals (including
+// ones that happen to contain a colon), and $-interpolation keep working exactly
+// as before.
 
 const FIELD_TOKEN = "[A-Za-z_][A-Za-z0-9_.]*";
 const VALUE_MAP_RE = new RegExp(`^(${FIELD_TOKEN})\\[(.*)\\]$`);
-const TRANSFORM_RE = new RegExp(`^(${FIELD_TOKEN}):(case|date|time|datetime|number)$`);
+const VALUE_FORMAT_RE = new RegExp(`^(${FIELD_TOKEN})\\{(.*)\\}$`);
+
+// Parse a `{...}` modifier body into a format object, mirroring aux4/2table's
+// Structure.js parseProperties: options are separated by `,` or `;`, `key:value`
+// pairs, and numeric values (decimals) are coerced to integers. Commas inside the
+// braces are the caller's responsibility to keep grouped (see the brace-depth
+// tracking in splitKvItems and the VALUE_FORMAT_RE anchor).
+function parseFormatProperties(propertiesStr) {
+  const properties = {};
+  if (!propertiesStr) return properties;
+  propertiesStr
+    .split(/[;,]/)
+    .map(property => {
+      const separatorIndex = property.indexOf(":");
+      if (separatorIndex === -1) {
+        return [property.trim(), undefined];
+      }
+      return [property.slice(0, separatorIndex).trim(), property.slice(separatorIndex + 1).trim()];
+    })
+    .forEach(([key, value]) => {
+      if (key && value !== undefined) {
+        if (value !== "" && !isNaN(value)) {
+          properties[key] = parseInt(value, 10);
+        } else {
+          properties[key] = value;
+        }
+      }
+    });
+  return properties;
+}
+
+// Parse the body of a trailing `{...}` modifier into a format object, but only
+// when it actually declares a `format:` type. A modifier without a `format` key
+// (e.g. `{width:20}`) returns null so callers preserve their pre-format behavior
+// (the modifier is accepted but ignored, matching the historical contract).
+function parseFormatModifier(propertiesStr) {
+  const props = parseFormatProperties(propertiesStr);
+  return props.format !== undefined ? props : null;
+}
 
 // Build a value-map lookup from the bracket contents, reusing the kv grammar so
 // `field[A:x,B:y]` parses identically to `render kv`'s `field[A:x,B:y]` renames.
@@ -3149,67 +3448,9 @@ function resolveValueMap(field, content, record) {
   return map.has(rawValue) ? map.get(rawValue) : rawValue;
 }
 
-// snake_case / SCREAMING_SNAKE_CASE (and space-separated) -> Title Case words.
-function toTitleCase(str) {
-  return str
-    .split(/[_\s]+/)
-    .filter(word => word.length > 0)
-    .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
-    .join(" ");
-}
-
-// Parse a value into a Date. A number (or all-digit string) is treated as epoch
-// millis; anything else is handed to the Date constructor (assumed ISO 8601 with
-// a Z suffix or explicit offset). Returns null when the result is not a valid
-// date, so callers can fall back to the raw value.
-function parseTimestamp(value) {
-  let date;
-  if (typeof value === "number") {
-    date = new Date(value);
-  } else {
-    const str = String(value).trim();
-    if (str === "") return null;
-    date = /^-?\d+$/.test(str) ? new Date(Number(str)) : new Date(str);
-  }
-  return Number.isNaN(date.getTime()) ? null : date;
-}
-
-// Apply a named transform to a raw field value. Timezone-sensitive transforms
-// (date/time/datetime) convert from the timestamp's absolute instant to the Node
-// runtime's default timezone via toLocale* with an undefined locale — the local
-// machine's timezone/locale, never a hardcoded one. Any value that cannot be
-// parsed for the transform is returned as its raw string unchanged.
-function applyTransform(rawValue, name) {
-  const str = stringify(rawValue);
-  if (name === "case") {
-    return str === "" ? "" : toTitleCase(str);
-  }
-  if (name === "number") {
-    const n = typeof rawValue === "number" ? rawValue : Number(str);
-    if (str.trim() === "" || Number.isNaN(n)) return str;
-    return n.toLocaleString();
-  }
-  const date = parseTimestamp(rawValue);
-  if (date === null) return str;
-  if (name === "date") {
-    return date.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
-  }
-  if (name === "time") {
-    return date.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
-  }
-  // datetime
-  return date.toLocaleString(undefined, {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit"
-  });
-}
-
 // Apply the field resolution rules to a single template value. Order matters:
-// value-map (brackets) first, then named transform (bare colon + known name),
-// then the original bare-field / literal / $-interpolation behavior.
+// value-map (brackets) first, then value-format (braces + a format: key), then
+// the original bare-field / literal / $-interpolation behavior.
 function resolve(template, record) {
   if (template === undefined || template === null || template === "") return "";
 
@@ -3218,9 +3459,15 @@ function resolve(template, record) {
     return resolveValueMap(mapMatch[1], mapMatch[2], record);
   }
 
-  const transformMatch = template.match(TRANSFORM_RE);
-  if (transformMatch) {
-    return applyTransform(getField(record, transformMatch[1]), transformMatch[2]);
+  const formatMatch = template.match(VALUE_FORMAT_RE);
+  if (formatMatch) {
+    const format = parseFormatModifier(formatMatch[2]);
+    // Only a real `{format:...}` modifier renders through the formatter; a brace
+    // body without a format type falls through to the rules below.
+    if (format) {
+      const formatted = ValueFormatterFactory.create(format).format(getField(record, formatMatch[1]));
+      return stringify(formatted);
+    }
   }
 
   if (template.indexOf("$") === -1) {
@@ -3264,7 +3511,15 @@ function renderList(args) {
   }
 
   const records = parseRecords(raw);
-  const width = process.stdout.columns || 80;
+
+  // Every emitted line starts with a single leading space (a left gutter) so list
+  // output visually aligns with aux4/2table (and table/csv, which delegate to it) —
+  // all of which render each line inside a one-column left gutter. The gutter
+  // consumes one column, so ALL width math below (primary truncation and the
+  // right-aligned badge) runs against the remaining content width (terminal - 1),
+  // keeping the badge's right edge flush without overflowing by the extra column.
+  const GUTTER = " ";
+  const width = (process.stdout.columns || 80) - GUTTER.length;
 
   const blocks = records.map(record => {
     const icon = resolve(iconTpl, record);
@@ -3276,8 +3531,9 @@ function renderList(args) {
 
     // A list item's primary is a single line by design (like MUI's ListItemText,
     // which truncates with an ellipsis rather than wrapping). Truncate the plain
-    // primary text to fit within the terminal width, reserving room for the icon
-    // prefix and — when a badge is present — the badge plus a one-space gap.
+    // primary text to fit within the (gutter-adjusted) terminal width, reserving
+    // room for the icon prefix and — when a badge is present — the badge plus a
+    // one-space gap.
     const reservedForBadge = badge ? badge.length + 1 : 0;
     const availableForPrimary = width - iconStr.length - reservedForBadge;
     const primaryFits = availableForPrimary <= 0 || primary.length <= availableForPrimary;
@@ -3293,20 +3549,22 @@ function renderList(args) {
     const lines = [];
     if (badge) {
       // The badge is right-aligned, so the primary sits mid-line; color it as-is.
+      // `gap` uses the gutter-adjusted width so the gutter + left + gap + badge
+      // spans exactly the terminal width (badge flush to the right edge).
       const gap = Math.max(1, width - plainLeft.length - badge.length);
       const coloredLeft = iconStr + (displayPrimary ? `${YELLOW}${displayPrimary}${RESET}` : displayPrimary);
-      lines.push((coloredLeft + " ".repeat(gap) + badge).replace(/\s+$/, ""));
+      lines.push((GUTTER + coloredLeft + " ".repeat(gap) + badge).replace(/\s+$/, ""));
     } else {
       // Trim trailing whitespace first, then color the surviving primary text.
       const trimmedPrimary = displayPrimary.replace(/\s+$/, "");
       if (trimmedPrimary) {
-        lines.push(iconStr + `${YELLOW}${trimmedPrimary}${RESET}`);
+        lines.push(GUTTER + iconStr + `${YELLOW}${trimmedPrimary}${RESET}`);
       } else {
-        lines.push(iconStr.replace(/\s+$/, ""));
+        lines.push((GUTTER + iconStr).replace(/\s+$/, ""));
       }
     }
     if (secondary) {
-      lines.push((" ".repeat(iconStr.length) + secondary).replace(/\s+$/, ""));
+      lines.push((GUTTER + " ".repeat(iconStr.length) + secondary).replace(/\s+$/, ""));
     }
     return lines.join("\n");
   });
@@ -3376,16 +3634,22 @@ function delegateToTable(args, format) {
 // Column-width modifiers like `{width:N}` are accepted but silently ignored,
 // since a user may paste a structure they also use with `table`/`csv`.
 
-// Split a structure string on top-level commas (commas inside [...] stay grouped).
+// Split a structure string on top-level commas. Commas inside [...] (nested
+// groups) OR inside {...} (a `{format:currency,currency:USD}` modifier) stay
+// grouped — brace-depth tracking mirrors aux4/2table's Structure.js parseItems so
+// a multi-option format modifier is never split apart on its inner comma.
 function splitKvItems(str) {
   const items = [];
   let current = "";
-  let depth = 0;
+  let bracketDepth = 0;
+  let braceDepth = 0;
   for (let i = 0; i < str.length; i++) {
     const ch = str[i];
-    if (ch === "[") depth++;
-    else if (ch === "]") depth--;
-    if (ch === "," && depth === 0) {
+    if (ch === "[") bracketDepth++;
+    else if (ch === "]") bracketDepth--;
+    else if (ch === "{") braceDepth++;
+    else if (ch === "}") braceDepth--;
+    if (ch === "," && bracketDepth === 0 && braceDepth === 0) {
       if (current.trim()) items.push(parseKvItem(current.trim()));
       current = "";
     } else {
@@ -3396,9 +3660,13 @@ function splitKvItems(str) {
   return items;
 }
 
-// Parse a single structure item into { field, label, group }. `label` is null
-// unless the item was renamed with `field:Label`; surrounding double quotes are
-// stripped from the label (matching 2table's own header rendering).
+// Parse a single structure item into { field, label, group, format }. `label` is
+// null unless the item was renamed with `field:Label` (surrounding double quotes
+// are stripped, matching 2table's own header rendering). `format` is null unless
+// the item carries a trailing `{format:...}` modifier — parsed into a format
+// object routed through the shared ValueFormatter. A trailing modifier WITHOUT a
+// `format:` key (e.g. `{width:20}`) is still accepted but ignored (format = null),
+// preserving the historical "paste a table structure unchanged" contract.
 function parseKvItem(item) {
   const fieldMatch = item.match(/^([^:[\]{]+)/);
   if (!fieldMatch) {
@@ -3434,11 +3702,21 @@ function parseKvItem(item) {
     }
     if (end !== -1) {
       group = splitKvItems(remaining.substring(1, end));
+      remaining = remaining.substring(end + 1);
     }
   }
-  // Any trailing `{...}` (e.g. {width:20}) is intentionally ignored.
 
-  return { field, label, group };
+  // Capture a trailing `{...}` modifier. Only a body that declares a `format:`
+  // type produces a format object; anything else (e.g. {width:20}) is ignored.
+  let format = null;
+  if (remaining.startsWith("{")) {
+    const propsEnd = remaining.indexOf("}");
+    if (propsEnd !== -1) {
+      format = parseFormatModifier(remaining.substring(1, propsEnd));
+    }
+  }
+
+  return { field, label, group, format };
 }
 
 // Flatten a parsed structure into an ordered list of { key, path } leaves.
@@ -3453,7 +3731,7 @@ function collectKvLeaves(items, parentPath) {
     if (item.group && item.group.length > 0) {
       leaves.push(...collectKvLeaves(item.group, path));
     } else {
-      leaves.push({ key: item.label != null ? item.label : path, path });
+      leaves.push({ key: item.label != null ? item.label : path, path, format: item.format });
     }
   }
   return leaves;
@@ -3509,7 +3787,13 @@ function recordPairs(record, basePrefix, leaves) {
     for (const leaf of leaves) {
       const key = basePrefix ? `${basePrefix}.${leaf.key}` : leaf.key;
       const value = getField(record, leaf.path);
-      if (Array.isArray(value)) {
+      // A `{format:...}` leaf renders its value through the shared formatter
+      // (before stringify) and is emitted as a single formatted pair — array
+      // index-flattening is skipped so `amount{format:currency}` is one line.
+      if (leaf.format) {
+        const formatted = ValueFormatterFactory.create(leaf.format).format(value);
+        out.push({ key, value: stringify(formatted) });
+      } else if (Array.isArray(value)) {
         flatten(value, key, out);
       } else {
         out.push({ key, value: stringify(value) });
@@ -3613,7 +3897,14 @@ function buildSelectedObject(record, items) {
         // value (null when missing) so the nested selection at least surfaces it.
         result[key] = value === undefined ? null : value;
       }
+    } else if (item.format) {
+      // A `{format:...}` leaf becomes its formatted display string (turning a
+      // typed value into a string is expected); missing/un-parseable values fall
+      // back per the formatter's contract (empty string / raw value).
+      const formatted = ValueFormatterFactory.create(item.format).format(value === undefined ? "" : value);
+      result[key] = stringify(formatted);
     } else {
+      // No format modifier: preserve the original typed value and nesting exactly.
       result[key] = value === undefined ? null : value;
     }
   }

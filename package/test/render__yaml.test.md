@@ -194,6 +194,46 @@ exit=1
 --index 5 is out of range: 2 record(s) available.
 ```
 
+## value format
+
+A `field{format:...}` modifier renders the selected field's value through the
+shared formatter (vendored from aux4/2table). A formatted value intentionally
+becomes a display string; fields without a modifier keep their original typed
+value and nesting. Tests pin `locale:en-US` and run under `TZ=UTC`.
+
+### should format a currency leaf as a display string and preserve other typed fields
+
+```execute
+echo '[{"name":"Widget","price":1234.5,"qty":3}]' | TZ=UTC aux4 render yaml 'name,price{format:currency,currency:USD,locale:en-US},qty'
+```
+
+```expect
+name: Widget
+price: $1,234.50
+qty: 3
+```
+
+### should format a datetime leaf via the style key
+
+```execute
+echo '[{"ts":"2026-07-15T02:30:00Z"}]' | TZ=UTC aux4 render yaml 'ts{format:datetime,style:short,locale:en-US}'
+```
+
+```expect
+ts: 7/15/26, 2:30 AM
+```
+
+### should format a nested leaf inside a group
+
+```execute
+echo '[{"order":{"total":99.9}}]' | TZ=UTC aux4 render yaml 'order[total{format:currency,currency:USD,locale:en-US}]'
+```
+
+```expect
+order:
+  total: $99.90
+```
+
 ## empty array
 
 ### should print nothing and exit 0 for an empty array

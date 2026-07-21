@@ -8,8 +8,9 @@ Field selection uses the **same structure grammar** as `render table` / `render 
 - **Nested groups** — `address[street,city]` flattens to **dotted keys**: `address.street=...` and `address.city=...`.
 - **Renaming** — `field:"Label"` (or `field:Label` without quotes) overrides the emitted key name. `address[street:"Street Address"]` emits `Street Address=Main St` — the label replaces the whole key rather than being appended to the dotted path.
 - **Bare object field** — selecting a field that holds a nested object without brackets (e.g. just `address`) emits the whole sub-object as a single JSON value (`address={"street":"Main St","city":"NYC"}`).
+- **Value formatting — `field{format:TYPE,option:value,...}`** — render the field's value through the shared value formatter (vendored from `aux4/2table`). Types: `number`, `currency`, `percent`, `date`, `time`, `datetime`. Option keys: `decimals`, `currency` (ISO code, default `USD`), `locale`, and the unified temporal `style` (`short|medium|long|full`) plus `dateStyle`/`timeStyle` overrides. `price{format:currency,currency:USD}` emits `price=$1,234.50`. Empty/un-parseable values fall back to the raw value (never `NaN`/`Invalid Date`). Commas inside the braces stay grouped, so `field{format:currency,currency:USD}` is not split on its inner comma. A formatted leaf is emitted as a single pair (array index-flattening is skipped for it).
 
-Column-width modifiers such as `{width:20}` are accepted but silently ignored, so a structure you also use with `table` or `csv` can be pasted unchanged.
+Column-width modifiers such as `{width:20}` (a brace modifier without a `format:` key) are accepted but silently ignored, so a structure you also use with `table` or `csv` can be pasted unchanged.
 
 If the structure argument is **omitted**, every field of each record is auto-flattened recursively into dotted keys — nested objects are walked to produce dotted paths.
 
@@ -30,7 +31,7 @@ Input handling: a single JSON object is treated as a one-item array; an empty ar
 cat data.json | aux4 render kv [<structure>] [--index <N>]
 ```
 
-structure  Optional. Comma-separated field structure (`field`, `field[sub1,sub2]`, `field:"Label"`). Omit to auto-flatten every field into dotted keys.
+structure  Optional. Comma-separated field structure (`field`, `field[sub1,sub2]`, `field:"Label"`, `field{format:TYPE,...}`). Omit to auto-flatten every field into dotted keys.
 --index    Optional. 0-based index selecting a single record from the top-level array, rendered with no index prefix. Out of range exits 1.
 
 #### Example
@@ -92,4 +93,16 @@ echo '[{"name":"Alice","tags":["a","b"]},{"name":"Bob","tags":["c"]}]' | aux4 re
 ```text
 name=Bob
 tags.0=c
+```
+
+Format values with `field{format:...}`:
+
+```bash
+echo '[{"name":"Widget","price":1234.5,"rate":0.2}]' | aux4 render kv 'name,price{format:currency,currency:USD,locale:en-US},rate{format:percent,decimals:0,locale:en-US}'
+```
+
+```text
+name=Widget
+price=$1,234.50
+rate=20%
 ```
