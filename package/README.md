@@ -155,8 +155,46 @@ All render commands read JSON from standard input and handle these cases consist
 
 - **JSON array** — rendered as usual, one row per element.
 - **A single JSON object** (not wrapped in an array) — treated as a one-item array and rendered normally.
+- **NDJSON** (one JSON object per line) — auto-detected when stdin is not a single JSON document. Each non-blank line is parsed as one record; blank/whitespace-only lines are ignored. A line that fails to parse prints a clear error with its 1-based line number to stderr and exits `1`.
 - **An empty array (`[]`)** — a clean no-op: nothing is printed and the command exits `0`.
 - **Invalid / non-JSON input** — the command prints a clear error to stderr and exits `1`.
+
+Detection is automatic: the whole buffer is tried as a single JSON document first (so pretty-printed multi-line JSON keeps working), and only when that fails is the input read line-by-line as NDJSON.
+
+```bash
+printf '{"name":"Alice"}\n{"name":"Bob"}\n' | aux4 render list --primary name
+```
+
+```text
+ Alice
+
+ Bob
+```
+
+## Streaming with `--inputStream`
+
+`render list`, `render csv`, and `render table` accept a `--inputStream` flag that reads stdin **line-by-line** (NDJSON) and renders each record **as it arrives**, never waiting for EOF. This makes `render` a live viewer for an append-only NDJSON stream:
+
+```bash
+tail -f events.ndjson | aux4 render list --inputStream --primary title --secondary message
+```
+
+- **`render list --inputStream`** — each record is an independent block, printed live with the same formatting as batch mode.
+- **`render csv --inputStream`** — prints the header row once (from the `--table` structure, or the first record's keys), then one RFC 4180 CSV line per record. Rendered **in-process** (does not delegate to `aux4 2table`).
+- **`render table --inputStream`** — prints an aligned table live in 2table's borderless ascii style (no box). Because rows arrive one at a time, column widths are **frozen from the header names plus the first record**; every later row is clamped to those widths — padded when short, or **truncated with a trailing `…`** when longer — so the columns stay aligned. An explicit `field{width:N}` always wins. Rendered **in-process** (does not delegate to `aux4 2table`).
+
+```bash
+printf '{"name":"Ada","city":"NYC"}\n{"name":"Bob","city":"SanFranciscoBayArea"}\n' \
+  | aux4 render table name,city --inputStream
+```
+
+```text
+ name  city
+ Ada   NYC
+ Bob   San…
+```
+
+Without `--inputStream`, all commands still accept NDJSON but buffer the whole stream first (the non-streaming `render table`/`render csv` continue to delegate to `aux4 2table` for their exact batch layout).
 
 ## Commands
 
@@ -170,6 +208,7 @@ Options:
 - `--secondary <template>` — Secondary line, printed beneath the primary and indented to align under it.
 - `--icon <template>` — Rendered before the primary line.
 - `--badge <template>` — Right-aligned on the primary line to the terminal width (80 columns when not a TTY, e.g. in a pipe). Plain text, not interactive.
+- `--inputStream <true|false>` — Stream stdin line-by-line (NDJSON) and render each record live as it arrives, never waiting for EOF (default: false). See [Streaming with `--inputStream`](#streaming-with---inputstream).
 
 Records are separated by a blank line. In a real terminal the primary text is printed in yellow to stand out; the icon, secondary, and badge stay uncolored. The plain-text examples below do not show the color.
 
@@ -409,6 +448,7 @@ Options:
 - `table` (positional) — The table structure (column list) to output. Omit to auto-generate.
 - `--lineNumbers <true|false>` — Add a first column with line numbers starting from 1 (default: false). Forwarded to 2table.
 - `--showInvalidLines <true|false>` — Show invalid lines as `<invalid line>` instead of skipping them (default: false). Forwarded to 2table.
+- `--inputStream <true|false>` — Stream stdin line-by-line and render an aligned (borderless) table live, freezing column widths from the header names plus the first record (default: false). See [Streaming with `--inputStream`](#streaming-with---inputstream). Rendered in-process; `--lineNumbers`/`--showInvalidLines` do not apply in streaming mode.
 
 ASCII table:
 
@@ -446,6 +486,7 @@ Options:
 - `table` (positional) — The table structure (column list) to output. Omit to auto-generate.
 - `--lineNumbers <true|false>` — Add a first column with line numbers starting from 1 (default: false). Forwarded to 2table.
 - `--showInvalidLines <true|false>` — Show invalid lines as `<invalid line>` instead of skipping them (default: false). Forwarded to 2table.
+- `--inputStream <true|false>` — Stream stdin line-by-line and print CSV live: the header once (from the structure or the first record's keys), then one RFC 4180 line per record (default: false). See [Streaming with `--inputStream`](#streaming-with---inputstream). Rendered in-process; `--lineNumbers`/`--showInvalidLines` do not apply in streaming mode.
 
 Input (`people.json`):
 

@@ -44,7 +44,7 @@
         {
           "name": "list",
           "execute": [
-            "stdin:node ${packageDir}/lib/aux4-render.mjs list values(primary, secondary, icon, badge)"
+            "stdin:node ${packageDir}/lib/aux4-render.mjs list values(primary, secondary, icon, badge, inputStream)"
           ],
           "help": {
             "text": "Render a JSON array from stdin as a MUI-List-style view (icon, primary, secondary, badge).",
@@ -69,6 +69,11 @@
                 "name": "badge",
                 "text": "Badge template, rendered right-aligned on the primary line (plain text, not interactive). Bare field name, $field interpolation, value-map field[VALUE:label,...], or value formatting field{format:TYPE,...}.",
                 "default": ""
+              },
+              {
+                "name": "inputStream",
+                "text": "Stream stdin line-by-line (NDJSON) and render each record live as it arrives, never waiting for EOF — e.g. tail -f log.ndjson | aux4 render list --inputStream. Each record is an independent block with the same formatting as batch mode.",
+                "default": "false"
               }
             ]
           }
@@ -120,7 +125,7 @@
         {
           "name": "table",
           "execute": [
-            "stdin:node ${packageDir}/lib/aux4-render.mjs table values(table, lineNumbers, showInvalidLines)"
+            "stdin:node ${packageDir}/lib/aux4-render.mjs table values(table, lineNumbers, showInvalidLines, inputStream)"
           ],
           "help": {
             "text": "Render a JSON array from stdin as a table, delegating to aux4 2table.",
@@ -140,6 +145,11 @@
                 "name": "showInvalidLines",
                 "text": "Show invalid lines as <invalid line> instead of skipping them (forwarded to aux4 2table).",
                 "default": "false"
+              },
+              {
+                "name": "inputStream",
+                "text": "Stream stdin line-by-line (NDJSON) and render an aligned box table live as rows arrive. Column widths are frozen from the header names plus the FIRST record; later rows are clamped to those widths (padded when short, truncated with … when long). An explicit field{width:N} always wins. The bottom border is printed only on real EOF. Renders in-process (does not delegate to aux4 2table).",
+                "default": "false"
               }
             ]
           }
@@ -147,7 +157,7 @@
         {
           "name": "csv",
           "execute": [
-            "stdin:node ${packageDir}/lib/aux4-render.mjs csv values(table, lineNumbers, showInvalidLines)"
+            "stdin:node ${packageDir}/lib/aux4-render.mjs csv values(table, lineNumbers, showInvalidLines, inputStream)"
           ],
           "help": {
             "text": "Render a JSON array from stdin as CSV, delegating to aux4 2table --format csv.",
@@ -166,6 +176,11 @@
               {
                 "name": "showInvalidLines",
                 "text": "Show invalid lines as <invalid line> instead of skipping them (forwarded to aux4 2table).",
+                "default": "false"
+              },
+              {
+                "name": "inputStream",
+                "text": "Stream stdin line-by-line (NDJSON) and print CSV live as records arrive: the header row once (from the --table structure, or the first record's keys), then one RFC 4180 line per record — e.g. tail -f log.ndjson | aux4 render csv --inputStream. Renders in-process (does not delegate to aux4 2table).",
                 "default": "false"
               }
             ]

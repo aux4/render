@@ -221,7 +221,7 @@ exit=1
 ```
 
 ```error:partial
-Invalid JSON on stdin: *?
+Invalid JSON on stdin (line 1): *?
 ```
 
 ## missing primary
@@ -417,4 +417,81 @@ echo '[{"name":"Alice","date":"2026-01-01"}]' | aux4 render list --primary name 
 ```expect
  Alice
  2026-01-01
+```
+
+## NDJSON input
+
+Besides a single JSON document (array or object), `render list` accepts NDJSON —
+one JSON object per line — auto-detected when stdin is not a single JSON document.
+Blank lines are ignored.
+
+### should render one block per NDJSON line
+
+```execute
+printf '{"name":"Alice"}\n{"name":"Bob"}\n' | aux4 render list --primary name
+```
+
+```expect
+ Alice
+
+ Bob
+```
+
+### should ignore blank lines in NDJSON input
+
+```execute
+printf '{"name":"Alice"}\n\n\n{"name":"Bob"}\n' | aux4 render list --primary name
+```
+
+```expect
+ Alice
+
+ Bob
+```
+
+### should fail with the offending line number on a bad NDJSON line
+
+In batch (non-streaming) mode all NDJSON lines are validated before anything renders,
+so a bad line 2 aborts with exit 1 and reports its line number on stderr.
+
+```execute
+printf '{"name":"Alice"}\nnot json\n' | aux4 render list --primary name; echo "exit=$?"
+```
+
+```expect
+exit=1
+```
+
+```error:partial
+Invalid JSON on stdin (line 2): *?
+```
+
+## inputStream
+
+With `--inputStream`, stdin is read line-by-line (NDJSON) and each record is rendered
+live as it arrives. A finite piped stream that closes renders every record with the
+same formatting as batch mode.
+
+### should render each record from a finite streamed input
+
+```execute
+printf '{"name":"Alice"}\n{"name":"Bob"}\n' | aux4 render list --primary name --inputStream
+```
+
+```expect
+ Alice
+
+ Bob
+```
+
+### should ignore blank lines while streaming
+
+```execute
+printf '{"name":"Alice"}\n\n{"name":"Bob"}\n' | aux4 render list --primary name --inputStream
+```
+
+```expect
+ Alice
+
+ Bob
 ```

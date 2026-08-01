@@ -27,6 +27,7 @@
 
 import { spawnSync } from "child_process";
 import fs from "fs";
+import readline from "readline";
 import yaml from "js-yaml";
 // Vendored from aux4/2table — see lib/ValueFormatter.js. Powers the shared
 // `{format:...}` value modifier for kv/yaml/list (table/csv pass it through to
@@ -198,14 +199,23 @@ function resolve(template, record) {
   return template.replace(/\$([A-Za-z_][A-Za-z0-9_.]*)/g, (_match, path) => stringify(getField(record, path)));
 }
 
+// Parse stdin into an array of records, auto-detecting the input shape:
+//   1) A single JSON document — a whole-buffer array (used as-is) or object
+//      (wrapped into a 1-item array). This is the historical behavior and is
+//      tried first so pretty-printed multi-line JSON keeps working.
+//   2) NDJSON — one JSON value per line — used as the fallback when the whole
+//      buffer is not a single valid JSON document. Blank/whitespace-only lines
+//      are ignored; any non-blank line that fails to parse errors with its line
+//      number (exit 1), matching the single-document invalid-JSON style.
 function parseRecords(raw) {
   const trimmed = raw.trim();
   if (trimmed === "") return [];
   let value;
   try {
     value = JSON.parse(trimmed);
-  } catch (e) {
-    fail(`Invalid JSON on stdin: ${e.message}`, 1);
+  } catch {
+    // Not a single JSON document -> treat stdin as NDJSON (one object per line).
+    return parseNdjson(raw);
   }
   // A single object is treated as a 1-item array; an array is used as-is (an empty
   // array yields an empty list, which the callers render as no output).
@@ -214,19 +224,115 @@ function parseRecords(raw) {
   fail("Expected a JSON array (or object) on stdin.", 1);
 }
 
+// Parse an NDJSON buffer: one JSON value per line, blank lines skipped. A line
+// that fails to parse is a hard error (exit 1) reported with its 1-based line
+// number so the source of a malformed record is obvious.
+function parseNdjson(raw) {
+  const records = [];
+  raw.split(/\r?\n/).forEach((line, i) => {
+    const text = line.trim();
+    if (text === "") return;
+    let value;
+    try {
+      value = JSON.parse(text);
+    } catch (e) {
+      fail(`Invalid JSON on stdin (line ${i + 1}): ${e.message}`, 1);
+    }
+    records.push(value);
+  });
+  return records;
+}
+
+// Read stdin line-by-line and invoke `onRecord` for each parsed JSON value AS IT
+// ARRIVES (never waiting for EOF), then `onClose` when the stream ends. This is
+// the foundation of --inputStream: piping `tail -f log | aux4 render <cmd> --inputStream`
+// renders each new line live. Blank lines are skipped; a line that fails to parse
+// errors with its 1-based line number (exit 1), mirroring parseNdjson.
+function followStream(onRecord, onClose) {
+  const rl = readline.createInterface({ input: process.stdin, crlfDelay: Infinity });
+  let lineNo = 0;
+  rl.on("line", line => {
+    lineNo += 1;
+    const text = line.trim();
+    if (text === "") return;
+    let value;
+    try {
+      value = JSON.parse(text);
+    } catch (e) {
+      fail(`Invalid JSON on stdin (line ${lineNo}): ${e.message}`, 1);
+    }
+    onRecord(value);
+  });
+  rl.on("close", () => {
+    if (onClose) onClose();
+  });
+}
+
+// Render a single list record into its block string (icon + primary line, plus an
+// optional right-aligned badge and an indented secondary line). Shared by batch
+// mode (records joined by a blank line) and --inputStream mode (one block per incoming
+// record), so both produce byte-identical formatting.
+function renderListBlock(record, cfg) {
+  const { primaryTpl, secondaryTpl, iconTpl, badgeTpl, width } = cfg;
+  const GUTTER = " ";
+
+  const icon = resolve(iconTpl, record);
+  const primary = resolve(primaryTpl, record);
+  const secondary = secondaryTpl ? resolve(secondaryTpl, record) : "";
+  const badge = badgeTpl ? resolve(badgeTpl, record) : "";
+
+  const iconStr = icon ? `${icon} ` : "";
+
+  // A list item's primary is a single line by design (like MUI's ListItemText,
+  // which truncates with an ellipsis rather than wrapping). Truncate the plain
+  // primary text to fit within the (gutter-adjusted) terminal width, reserving
+  // room for the icon prefix and — when a badge is present — the badge plus a
+  // one-space gap.
+  const reservedForBadge = badge ? badge.length + 1 : 0;
+  const availableForPrimary = width - iconStr.length - reservedForBadge;
+  const primaryFits = availableForPrimary <= 0 || primary.length <= availableForPrimary;
+  const displayPrimary = primaryFits
+    ? primary
+    : primary.slice(0, Math.max(0, availableForPrimary - 1)) + "…";
+
+  // Only the primary text is colored yellow; icon, secondary, and badge stay
+  // uncolored. Layout uses the plain (uncolored) length. Trailing-whitespace
+  // trimming is done on the plain text so it is not defeated by the reset code.
+  const plainLeft = iconStr + displayPrimary;
+
+  const lines = [];
+  if (badge) {
+    // The badge is right-aligned, so the primary sits mid-line; color it as-is.
+    // `gap` uses the gutter-adjusted width so the gutter + left + gap + badge
+    // spans exactly the terminal width (badge flush to the right edge).
+    const gap = Math.max(1, width - plainLeft.length - badge.length);
+    const coloredLeft = iconStr + (displayPrimary ? `${YELLOW}${displayPrimary}${RESET}` : displayPrimary);
+    lines.push((GUTTER + coloredLeft + " ".repeat(gap) + badge).replace(/\s+$/, ""));
+  } else {
+    // Trim trailing whitespace first, then color the surviving primary text.
+    const trimmedPrimary = displayPrimary.replace(/\s+$/, "");
+    if (trimmedPrimary) {
+      lines.push(GUTTER + iconStr + `${YELLOW}${trimmedPrimary}${RESET}`);
+    } else {
+      lines.push((GUTTER + iconStr).replace(/\s+$/, ""));
+    }
+  }
+  if (secondary) {
+    lines.push((GUTTER + " ".repeat(iconStr.length) + secondary).replace(/\s+$/, ""));
+  }
+  return lines.join("\n");
+}
+
 function renderList(args) {
   const primaryTpl = args[0] || "";
   const secondaryTpl = args[1] || "";
   const iconTpl = args[2] || "";
   const badgeTpl = args[3] || "";
-
-  const raw = readAllStdin();
+  const inputStream = args[4] === "true";
 
   if (!primaryTpl) {
     fail("No --primary template provided. Use --primary <field-or-template>.", 2);
   }
-
-  const records = parseRecords(raw);
 
   // Every emitted line starts with a single leading space (a left gutter) so list
   // output visually aligns with aux4/2table (and table/csv, which delegate to it) —
@@ -234,57 +340,24 @@ function renderList(args) {
   // consumes one column, so ALL width math below (primary truncation and the
   // right-aligned badge) runs against the remaining content width (terminal - 1),
   // keeping the badge's right edge flush without overflowing by the extra column.
-  const GUTTER = " ";
-  const width = (process.stdout.columns || 80) - GUTTER.length;
+  const width = (process.stdout.columns || 80) - 1;
+  const cfg = { primaryTpl, secondaryTpl, iconTpl, badgeTpl, width };
 
-  const blocks = records.map(record => {
-    const icon = resolve(iconTpl, record);
-    const primary = resolve(primaryTpl, record);
-    const secondary = secondaryTpl ? resolve(secondaryTpl, record) : "";
-    const badge = badgeTpl ? resolve(badgeTpl, record) : "";
+  // --inputStream: render each incoming record live (no cross-row coupling). Records
+  // are separated by a blank line exactly as in batch mode; each block is flushed
+  // as it arrives so `tail -f log | aux4 render list --inputStream` shows lines live.
+  if (inputStream) {
+    let first = true;
+    followStream(record => {
+      const block = renderListBlock(record, cfg);
+      process.stdout.write((first ? "" : "\n") + block + "\n");
+      first = false;
+    });
+    return;
+  }
 
-    const iconStr = icon ? `${icon} ` : "";
-
-    // A list item's primary is a single line by design (like MUI's ListItemText,
-    // which truncates with an ellipsis rather than wrapping). Truncate the plain
-    // primary text to fit within the (gutter-adjusted) terminal width, reserving
-    // room for the icon prefix and — when a badge is present — the badge plus a
-    // one-space gap.
-    const reservedForBadge = badge ? badge.length + 1 : 0;
-    const availableForPrimary = width - iconStr.length - reservedForBadge;
-    const primaryFits = availableForPrimary <= 0 || primary.length <= availableForPrimary;
-    const displayPrimary = primaryFits
-      ? primary
-      : primary.slice(0, Math.max(0, availableForPrimary - 1)) + "…";
-
-    // Only the primary text is colored yellow; icon, secondary, and badge stay
-    // uncolored. Layout uses the plain (uncolored) length. Trailing-whitespace
-    // trimming is done on the plain text so it is not defeated by the reset code.
-    const plainLeft = iconStr + displayPrimary;
-
-    const lines = [];
-    if (badge) {
-      // The badge is right-aligned, so the primary sits mid-line; color it as-is.
-      // `gap` uses the gutter-adjusted width so the gutter + left + gap + badge
-      // spans exactly the terminal width (badge flush to the right edge).
-      const gap = Math.max(1, width - plainLeft.length - badge.length);
-      const coloredLeft = iconStr + (displayPrimary ? `${YELLOW}${displayPrimary}${RESET}` : displayPrimary);
-      lines.push((GUTTER + coloredLeft + " ".repeat(gap) + badge).replace(/\s+$/, ""));
-    } else {
-      // Trim trailing whitespace first, then color the surviving primary text.
-      const trimmedPrimary = displayPrimary.replace(/\s+$/, "");
-      if (trimmedPrimary) {
-        lines.push(GUTTER + iconStr + `${YELLOW}${trimmedPrimary}${RESET}`);
-      } else {
-        lines.push((GUTTER + iconStr).replace(/\s+$/, ""));
-      }
-    }
-    if (secondary) {
-      lines.push((GUTTER + " ".repeat(iconStr.length) + secondary).replace(/\s+$/, ""));
-    }
-    return lines.join("\n");
-  });
-
+  const records = parseRecords(readAllStdin());
+  const blocks = records.map(record => renderListBlock(record, cfg));
   if (blocks.length > 0) {
     process.stdout.write(blocks.join("\n\n") + "\n");
   }
@@ -300,6 +373,16 @@ function delegateToTable(args, format) {
   const table = args[0] || "";
   const lineNumbers = args[1] || "false";
   const showInvalidLines = args[2] || "false";
+  const inputStream = args[3] === "true";
+
+  // --inputStream can't use the whole-array spawnSync handoff to 2table (that waits for
+  // EOF). Stream the rows in-process instead: csv prints a header then one line per
+  // record; table freezes column widths from the header + first row and clamps
+  // every later row to those widths. Non-follow behavior is unchanged.
+  if (inputStream) {
+    if (format === "csv") return followCsv(table);
+    return followTable(table);
+  }
 
   const raw = readAllStdin();
 
@@ -337,6 +420,147 @@ function delegateToTable(args, format) {
   if (stderr) process.stderr.write(stderr);
   if (result.stdout) process.stdout.write(result.stdout);
   process.exit(result.status === null ? 1 : result.status);
+}
+
+// --- streaming (--inputStream) table + csv ------------------------------------
+//
+// Unlike the non-streaming path (which buffers the whole array and hands it to
+// aux4/2table), --inputStream renders each record AS IT ARRIVES over a line-by-line
+// stream. Column widths therefore cannot be computed from the full dataset, so
+// the table renderer FREEZES each column's width from the header name plus the
+// FIRST record's cells, then clamps every later row to that width (padding when
+// short, truncating with a trailing "…" when long) so the columns stay aligned
+// even under `tail -f`. An explicit `{width:N}` on a column always wins. Output
+// matches 2table's borderless ascii style (no box), just streamed row-by-row.
+//
+// This is implemented in-process rather than by adding a streaming mode to
+// aux4/2table: 2table's AsciiRenderer is built around a two-pass, whole-dataset
+// width calculation and a full Table cell model, which is fundamentally at odds
+// with freeze-from-first-row streaming. A small self-contained renderer here
+// is cleaner than bolting an incompatible streaming path onto 2table, and keeps
+// the non-streaming delegation (the common case) untouched.
+
+// Turn the optional structure string into an ordered list of columns
+// ({ label, path, format, width }). With no structure, derive columns from the
+// first record's own top-level keys (the streaming analogue of auto-structure).
+function buildFollowColumns(leaves, firstRecord) {
+  if (leaves) {
+    return leaves.map(leaf => ({ label: leaf.key, path: leaf.path, format: leaf.format, width: leaf.width }));
+  }
+  const keys = firstRecord && typeof firstRecord === "object" && !Array.isArray(firstRecord) ? Object.keys(firstRecord) : [];
+  return keys.map(key => ({ label: key, path: key, format: null, width: null }));
+}
+
+// Resolve a column's display text for a record: read the field (dot-notation
+// aware), apply a `{format:...}` modifier when present, then stringify.
+function cellText(record, col) {
+  const value = getField(record, col.path);
+  if (col.format) {
+    return stringify(ValueFormatterFactory.create(col.format).format(value));
+  }
+  return stringify(value);
+}
+
+// Truncate text to at most `width` display columns, appending a trailing "…"
+// when it overflows ("…" is one display column, so the result never exceeds
+// `width`). Padding to width is handled separately by padCell.
+function truncCell(text, width) {
+  if (text.length > width) {
+    return text.slice(0, Math.max(0, width - 1)) + "…";
+  }
+  return text;
+}
+
+// Right-pad to `width` display columns (no-op when already at/over width).
+function padCell(text, width) {
+  return text.length >= width ? text : text + " ".repeat(width - text.length);
+}
+
+// Assemble one borderless line in aux4/2table's ascii style: a single leading
+// space, each cell truncated to its frozen width, columns separated by two
+// spaces. Every column but the LAST is right-padded to its frozen width; the
+// last is left unpadded so lines carry no trailing whitespace (matching 2table).
+function followLine(cells, cols, colorize) {
+  const last = cells.length - 1;
+  const parts = cells.map((cell, i) => {
+    const text = i < last ? padCell(truncCell(cell, cols[i].frozen), cols[i].frozen) : truncCell(cell, cols[i].frozen);
+    return colorize ? YELLOW + text + RESET : text;
+  });
+  return " " + parts.join("  ");
+}
+
+// A data row and the header row, in the borderless style above.
+function dataRow(record, cols) {
+  return followLine(cols.map(col => cellText(record, col)), cols, false);
+}
+
+function headerRow(cols) {
+  return followLine(cols.map(col => col.label), cols, true);
+}
+
+// Freeze each column's width from the header label and the first record's cell,
+// unless the column declared an explicit `{width:N}` (which always wins).
+function freezeWidths(cols, firstRecord) {
+  for (const col of cols) {
+    if (typeof col.width === "number") {
+      col.frozen = Math.max(1, col.width);
+    } else {
+      col.frozen = Math.max(1, col.label.length, cellText(firstRecord, col).length);
+    }
+  }
+}
+
+function parseStructureLeaves(structure) {
+  if (structure === "") return null;
+  try {
+    return collectKvLeaves(splitKvItems(structure), "");
+  } catch (e) {
+    fail(`Invalid structure: ${e.message}`, 2);
+  }
+}
+
+function followTable(table) {
+  const leaves = parseStructureLeaves((table || "").trim());
+  let cols = null;
+  let started = false;
+
+  followStream(
+    record => {
+      if (!started) {
+        cols = buildFollowColumns(leaves, record);
+        freezeWidths(cols, record);
+        // Emit the header + first data row immediately; borderless like 2table.
+        process.stdout.write(headerRow(cols) + "\n");
+        process.stdout.write(dataRow(record, cols) + "\n");
+        started = true;
+      } else {
+        process.stdout.write(dataRow(record, cols) + "\n");
+      }
+    },
+    () => {}
+  );
+}
+
+// RFC 4180 field: quote when it contains a comma, double quote, CR or LF, doubling
+// any embedded quotes (mirrors aux4/2table's CsvRenderer for the streaming case).
+function csvField(text) {
+  if (/[",\r\n]/.test(text)) {
+    return '"' + text.replace(/"/g, '""') + '"';
+  }
+  return text;
+}
+
+function followCsv(table) {
+  const leaves = parseStructureLeaves((table || "").trim());
+  let cols = null;
+
+  followStream(record => {
+    if (!cols) {
+      cols = buildFollowColumns(leaves, record);
+      process.stdout.write(cols.map(col => csvField(col.label)).join(",") + "\n");
+    }
+    process.stdout.write(cols.map(col => csvField(cellText(record, col))).join(",") + "\n");
+  });
 }
 
 // --- kv structure parser -------------------------------------------------
@@ -422,17 +646,24 @@ function parseKvItem(item) {
     }
   }
 
-  // Capture a trailing `{...}` modifier. Only a body that declares a `format:`
-  // type produces a format object; anything else (e.g. {width:20}) is ignored.
+  // Capture a trailing `{...}` modifier. A body declaring a `format:` type
+  // produces a format object; a `width:N` option (used by `render table --inputStream`
+  // to freeze an explicit column width) is captured separately. Other options are
+  // accepted but ignored, preserving the "paste a table structure unchanged"
+  // contract.
   let format = null;
+  let width = null;
   if (remaining.startsWith("{")) {
     const propsEnd = remaining.indexOf("}");
     if (propsEnd !== -1) {
-      format = parseFormatModifier(remaining.substring(1, propsEnd));
+      const body = remaining.substring(1, propsEnd);
+      format = parseFormatModifier(body);
+      const props = parseFormatProperties(body);
+      if (typeof props.width === "number") width = props.width;
     }
   }
 
-  return { field, label, group, format };
+  return { field, label, group, format, width };
 }
 
 // Flatten a parsed structure into an ordered list of { key, path } leaves.
@@ -447,7 +678,7 @@ function collectKvLeaves(items, parentPath) {
     if (item.group && item.group.length > 0) {
       leaves.push(...collectKvLeaves(item.group, path));
     } else {
-      leaves.push({ key: item.label != null ? item.label : path, path, format: item.format });
+      leaves.push({ key: item.label != null ? item.label : path, path, format: item.format, width: item.width });
     }
   }
   return leaves;
