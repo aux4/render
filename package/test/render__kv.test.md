@@ -412,5 +412,21 @@ exit=1
 ```
 
 ```error:partial
-Invalid JSON on stdin: *?
+Invalid JSON on stdin (line 1): *?
+```
+
+## NDJSON input
+
+`render kv` accepts NDJSON (one JSON object per line), auto-detected when stdin is
+not a single JSON document. Multiple records are prefixed with their index.
+
+### should flatten NDJSON records with index prefixes
+
+```execute
+printf '{"name":"Alice"}\n{"name":"Bob"}\n' | aux4 render kv name
+```
+
+```expect
+0.name=Alice
+1.name=Bob
 ```

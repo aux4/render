@@ -259,5 +259,21 @@ exit=1
 ```
 
 ```error:partial
-Invalid JSON on stdin: *?
+Invalid JSON on stdin (line 1): *?
+```
+
+## NDJSON input
+
+`render yaml` accepts NDJSON (one JSON object per line), auto-detected when stdin is
+not a single JSON document. Multiple records dump as a YAML sequence.
+
+### should dump NDJSON records as a YAML sequence
+
+```execute
+printf '{"name":"Alice"}\n{"name":"Bob"}\n' | aux4 render yaml name
+```
+
+```expect
+- name: Alice
+- name: Bob
 ```

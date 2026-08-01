@@ -107,5 +107,73 @@ exit=1
 ```
 
 ```error:partial
-Invalid JSON on stdin: *?
+Invalid JSON on stdin (line 1): *?
+```
+
+## NDJSON input
+
+`render table` also accepts NDJSON (one JSON object per line), auto-detected when
+stdin is not a single JSON document.
+
+### should render a table from NDJSON input
+
+```execute
+printf '{"name":"Alice","age":30}\n{"name":"Bob","age":25}\n' | aux4 render table name,age
+```
+
+```expect
+ name   age
+ Alice   30
+ Bob     25
+```
+
+## inputStream
+
+With `--inputStream`, `render table` streams stdin line-by-line and renders an aligned
+table live in aux4/2table's borderless ascii style (no box). Column widths are
+FROZEN from the header names plus the FIRST record; later rows are clamped to those
+widths — padded when short, truncated with `…` when longer — so the columns stay
+aligned even under `tail -f`.
+
+### should freeze widths from the first row and truncate an over-wide later row
+
+The `city` column freezes to width 4 (max of header `city` and the first value
+`NYC`). The second row's `SanFranciscoBayArea` exceeds 4 columns, so it is truncated
+to `San…` (three chars + ellipsis) keeping the columns aligned.
+
+```execute
+printf '{"name":"Ada","city":"NYC"}\n{"name":"Bob","city":"SanFranciscoBayArea"}\n' | aux4 render table name,city --inputStream
+```
+
+```expect
+ name  city
+ Ada   NYC
+ Bob   San…
+```
+
+### should honor an explicit column width over the frozen first-row width
+
+`city{width:5}` fixes the column at width 5 regardless of the first row, so
+`SanFranciscoBayArea` truncates to `SanF…`.
+
+```execute
+printf '{"name":"Ada","city":"NYC"}\n{"name":"Bob","city":"SanFranciscoBayArea"}\n' | aux4 render table 'name,city{width:5}' --inputStream
+```
+
+```expect
+ name  city
+ Ada   NYC
+ Bob   SanF…
+```
+
+### should derive columns from the first record when no structure is given
+
+```execute
+printf '{"name":"Ada"}\n{"name":"Bob"}\n' | aux4 render table --inputStream
+```
+
+```expect
+ name
+ Ada
+ Bob
 ```

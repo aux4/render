@@ -105,5 +105,64 @@ exit=1
 ```
 
 ```error:partial
-Invalid JSON on stdin: *?
+Invalid JSON on stdin (line 1): *?
+```
+
+## NDJSON input
+
+`render csv` also accepts NDJSON (one JSON object per line), auto-detected when
+stdin is not a single JSON document.
+
+### should render CSV from NDJSON input
+
+```execute
+printf '{"name":"Alice","age":30}\n{"name":"Bob","age":25}\n' | aux4 render csv name,age
+```
+
+```expect
+name,age
+Alice,30
+Bob,25
+```
+
+## inputStream
+
+With `--inputStream`, `render csv` streams stdin line-by-line: it prints the header row
+once (from the `--table` structure, or the first record's keys), then one RFC 4180
+CSV line per record as it arrives.
+
+### should print the header once then one CSV line per streamed record
+
+```execute
+printf '{"name":"Alice","age":30}\n{"name":"Bob","age":25}\n' | aux4 render csv name,age --inputStream
+```
+
+```expect
+name,age
+Alice,30
+Bob,25
+```
+
+### should quote a value containing a comma while streaming
+
+```execute
+printf '{"name":"Ada","city":"NYC"}\n{"name":"Bob, Jr.","city":"LA"}\n' | aux4 render csv name,city --inputStream
+```
+
+```expect
+name,city
+Ada,NYC
+"Bob, Jr.",LA
+```
+
+### should derive the header from the first record when no structure is given
+
+```execute
+printf '{"name":"Ada","age":1}\n{"name":"Bob","age":2}\n' | aux4 render csv --inputStream
+```
+
+```expect
+name,age
+Ada,1
+Bob,2
 ```

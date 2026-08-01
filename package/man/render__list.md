@@ -29,18 +29,21 @@ Layout:
 - The **primary** is a single line by design (like MUI's `ListItemText`): when it is too long to fit within the terminal width — after reserving room for the icon prefix and the badge plus a one-space gap when a badge is present — it is truncated with a trailing `…` rather than wrapping to multiple lines. This keeps the badge correctly right-aligned.
 - Records are separated by a blank line.
 
-Input handling: a single JSON object is treated as a one-item array; an empty array (`[]`) prints nothing and exits `0`; invalid/non-JSON input prints a clear error to stderr and exits `1`.
+Input handling: a single JSON object is treated as a one-item array; **NDJSON** (one JSON object per line) is auto-detected when stdin is not a single JSON document (blank lines ignored, a bad line errors with its 1-based line number and exits `1`); an empty array (`[]`) prints nothing and exits `0`; invalid/non-JSON input prints a clear error to stderr and exits `1`.
+
+With `--inputStream`, stdin is read line-by-line (NDJSON) and each record is rendered **live as it arrives**, never waiting for EOF — for example `tail -f events.ndjson | aux4 render list --inputStream --primary title`. Each record is an independent block with the same formatting as batch mode.
 
 #### Usage
 
 ```bash
-cat data.json | aux4 render list --primary <template> [--secondary <template>] [--icon <template>] [--badge <template>]
+cat data.json | aux4 render list --primary <template> [--secondary <template>] [--icon <template>] [--badge <template>] [--inputStream <true|false>]
 ```
 
 --primary    Primary line template (required). Bare field name or `$field` interpolation.
 --secondary  Secondary line template. Bare field name or `$field` interpolation.
 --icon       Icon template rendered before the primary line.
 --badge      Badge label, right-aligned on the primary line (plain text, not interactive).
+--inputStream     Stream stdin line-by-line (NDJSON) and render each record live as it arrives (default: false).
 
 #### Example
 
@@ -90,4 +93,10 @@ echo '[{"title":"Investigate outage","status":"BLOCKED"}]' \
 
 ```text
  BLOCKED Investigate outage
+```
+
+Consume an append-only NDJSON stream live (each line renders as it arrives):
+
+```bash
+tail -f events.ndjson | aux4 render list --inputStream --primary title --secondary message
 ```

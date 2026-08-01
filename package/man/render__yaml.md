@@ -18,7 +18,7 @@ If the structure argument is **omitted**, the full original record is dumped as-
 
 **`--index <N>`** — an optional 0-based index selecting a **single** record from the top-level array before serialization. The selected record is rendered as a single YAML mapping, and composes with an explicit structure argument. An out-of-range index (`N` ≥ record count, or `N` < 0) or a non-integer value prints a clear error to stderr and exits `1`. Omit it (or pass an empty value) to render every record.
 
-Input handling: a single JSON object is treated as a one-item array; an empty array (`[]`) prints nothing and exits `0`; invalid/non-JSON input prints a clear error to stderr and exits `1`.
+Input handling: a single JSON object is treated as a one-item array; **NDJSON** (one JSON object per line) is auto-detected when stdin is not a single JSON document (blank lines ignored, a bad line errors with its 1-based line number and exits `1`); an empty array (`[]`) prints nothing and exits `0`; invalid/non-JSON input prints a clear error to stderr and exits `1`.
 
 #### Usage
 
